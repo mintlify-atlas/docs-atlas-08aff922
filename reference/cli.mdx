@@ -1,0 +1,740 @@
+---
+title: "Zap CLI Command Reference (@wzrdtech/zap)"
+sidebarTitle: "CLI Commands"
+description: "Complete reference for every zap command: init, new, validate, lint, run, status, add, docs, skills, doctor, studio, dev, and more."
+---
+
+The `@wzrdtech/zap` package exposes a `zap` binary that provides a full suite of commands for creating, validating, linting, and running Zap recipes. **Node 24.x is required.** Install globally or invoke directly with `npx @wzrdtech/zap@0.1.0 <command>`.
+
+## Installation
+
+```bash
+# Use directly without installing:
+npx @wzrdtech/zap@0.1.0 <command>
+
+# Or install globally:
+npm install -g @wzrdtech/zap
+```
+
+---
+
+## `zap init <dir>`
+
+**Usage**
+
+```bash
+zap init <directory> [--non-interactive] [--empty] [--example <name>] [--json]
+```
+
+**Description**
+
+Creates a new Zap project at the specified directory. The command creates the full project scaffold:
+
+- `agent/skills/` — directory for skill sub-packages
+- `docs/` — project documentation directory
+- `.zap/` — local run artifacts and config
+- `package.json` — pre-wired with `@wzrdtech/zap` dev dependency and `zap:*` npm scripts
+- `AGENTS.md` — AI agent instructions for working with the project
+- `.gitignore` — ignores `.env*`, `.zap/runs`, and `node_modules`
+- `.env.example` — template for required environment variables
+
+Unless `--empty` is passed, a sample recipe (defaults to `hello-world`) is scaffolded under `agent/skills/`. Use `--example <name>` to choose a different starter recipe.
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--non-interactive` | Skip any interactive prompts |
+| `--empty` | Skip sample recipe scaffolding; create an empty `agent/skills/` directory |
+| `--example <name>` | Scaffold a named example recipe instead of `hello-world` |
+| `--json` | Emit JSON output: `{ "ok": true, "root": "<absolute path>" }` |
+
+**Example**
+
+```bash
+npx @wzrdtech/zap@0.1.0 init my-app --non-interactive
+# Initialized Zap project at /home/user/my-app
+```
+
+```bash
+# With --json
+npx @wzrdtech/zap@0.1.0 init my-app --json
+```
+
+```json
+{
+  "ok": true,
+  "root": "/home/user/my-app"
+}
+```
+
+---
+
+## `zap new <slug>`
+
+**Usage**
+
+```bash
+zap new <slug> [--force] [--json]
+```
+
+**Description**
+
+Scaffolds a new recipe skill directory at `agent/skills/zap-<slug>/`. The slug is automatically lowercased and normalized (non-alphanumeric characters become hyphens). **Must be run from a Zap project root** (a directory containing `package.json` and `agent/skills/`).
+
+The following files are created inside `agent/skills/zap-<slug>/`:
+
+- `SKILL.md` — skill description for AI routing
+- `Zap.md` — recipe file with YAML frontmatter and a default `mock` pipeline
+- `prompts/initial-frame.md` — image generation prompt template
+- `prompts/initial-gen.md` — video generation prompt template
+
+If any of these files already exist, the command throws an error unless `--force` is provided.
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--force` | Overwrite existing files in the skill directory |
+| `--json` | Emit JSON output: `{ "ok": true, "skillDir": "<path>", "slug": "<slug>" }` |
+
+**Example**
+
+```bash
+zap new world-intro
+# Created zap-world-intro at agent/skills/zap-world-intro
+```
+
+```bash
+zap new world-intro --json
+```
+
+```json
+{
+  "ok": true,
+  "skillDir": "/home/user/my-app/agent/skills/zap-world-intro",
+  "slug": "world-intro"
+}
+```
+
+---
+
+## `zap validate [Zap.md]`
+
+**Usage**
+
+```bash
+zap validate [Zap.md|slug] [--json]
+```
+
+**Description**
+
+Validates the YAML frontmatter of one or more `Zap.md` recipe files. Without arguments, discovers and validates all `agent/skills/*/Zap.md` files in the current project.
+
+Validation checks include:
+
+- **Required fields** — `zap`, `version`, `description`, `budget`, and `steps` must all be present
+- **Non-empty steps array** — at least one step is required
+- **Step field requirements** — every step must have `id` and `kind`
+- **Unique step IDs** — duplicate step IDs within a recipe are rejected
+- **Declared input variables** — prompt files may reference `{VARIABLE}` tokens; every referenced variable must be declared in `inputs`
+- **HyperFrames stitch** — if a stitch step uses `engine: hyperframes`, a `DESIGN.md` file must be present in the project root
+
+Exits with code `1` if any recipe fails validation.
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Emit JSON output: `{ "results": [{ "file": "...", "ok": true, "zap": "..." }] }` |
+
+**Example**
+
+```bash
+zap validate
+# ok agent/skills/zap-my-zap/Zap.md (my-zap)
+# ok agent/skills/zap-world-intro/Zap.md (world-intro)
+```
+
+```bash
+zap validate agent/skills/zap-my-zap/Zap.md --json
+```
+
+```json
+{
+  "results": [
+    {
+      "file": "agent/skills/zap-my-zap/Zap.md",
+      "ok": true,
+      "zap": "my-zap"
+    }
+  ]
+}
+```
+
+---
+
+## `zap lint [Zap.md]`
+
+**Usage**
+
+```bash
+zap lint [Zap.md|slug] [--json]
+```
+
+**Description**
+
+Runs policy checks against one or more recipe files, emitting warnings (not errors) for guideline violations. Without arguments, lints all `agent/skills/*/Zap.md` files in the current project.
+
+Policy checks include:
+
+- **Live provider default** — warns if `defaults.provider` is set to anything other than `mock`. Silence with `ZAP_LINT_ALLOW_LIVE_DEFAULT=1`.
+- **Positive budget cap** — warns if `budget.cap_usd` is zero or negative
+- **Stitch step presence** — warns if the recipe does not end with a `stitch` step
+
+Lint warnings do not fail the process; use `validate` for hard errors.
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Emit JSON output with per-file results and warnings arrays |
+
+**Example**
+
+```bash
+zap lint
+# ok agent/skills/zap-my-zap/Zap.md (my-zap)
+# warn agent/skills/zap-live-test/Zap.md (live-test)
+#   - defaults.provider is live; mock is safer for published templates.
+```
+
+```bash
+zap lint agent/skills/zap-live-test/Zap.md --json
+```
+
+```json
+{
+  "results": [
+    {
+      "file": "agent/skills/zap-live-test/Zap.md",
+      "ok": false,
+      "warnings": [
+        "defaults.provider is live; mock is safer for published templates."
+      ],
+      "zap": "live-test"
+    }
+  ]
+}
+```
+
+---
+
+## `zap run <Zap.md>`
+
+**Usage**
+
+```bash
+zap run <Zap.md|slug> [--live] [--input KEY=VALUE] [--extend <n>] [--json]
+```
+
+**Description**
+
+Executes a recipe pipeline. By default runs in **mock mode**: no real provider calls are made and all steps resolve immediately with mock URLs. Pass `--live` to plan real provider spend.
+
+**Pipeline execution:**
+
+1. Parses and validates the `Zap.md` frontmatter
+2. Resolves inputs — in mock mode, required inputs without values receive placeholder defaults (`mock-<name>`)
+3. Expands `video.extend` steps according to `--extend <n>` (or the step's `repeat.default`)
+4. Computes a spend quote for live runs; rejects if the quote exceeds `budget.cap_usd`
+5. Saves the result to `.zap/runs/<runId>/result.json`
+
+**Budget enforcement:**  
+If the computed quote exceeds `budget.cap_usd`, the run is rejected with an error:  
+`Run quote $X.XX exceeds recipe cap $Y.YY.`
+
+**Run ID format:** `run_<base36-timestamp>_<sha1-prefix>` (e.g. `run_m3x9k2_a1b2c3`)
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--live` | Allow real provider spend; validates all required inputs |
+| `--input KEY=VALUE` | Provide a recipe input value; repeat for multiple inputs |
+| `--extend <n>` | Number of `video.extend` step repetitions |
+| `--json` | Emit the full run result as JSON |
+
+**Example — mock run**
+
+```bash
+zap run agent/skills/zap-my-zap/Zap.md --input PROMPT="sunset over mountains"
+# Mock Zap run completed. run_m3x9k2_a1b2c3
+```
+
+```bash
+zap run agent/skills/zap-my-zap/Zap.md --input PROMPT="sunset over mountains" --json
+```
+
+```json
+{
+  "live": false,
+  "message": "Mock Zap run completed.",
+  "mode": "mock",
+  "quoteUsd": 0,
+  "runId": "run_m3x9k2_a1b2c3",
+  "status": "done",
+  "steps": [
+    {
+      "kind": "image.gen",
+      "model": "mock-image",
+      "provider": "mock",
+      "quoteUsd": 0,
+      "status": "done",
+      "stepId": "initial_frame"
+    },
+    {
+      "kind": "video.gen",
+      "model": "mock-video",
+      "provider": "mock",
+      "quoteUsd": 0,
+      "status": "done",
+      "stepId": "initial_gen"
+    },
+    {
+      "kind": "stitch",
+      "model": "local",
+      "provider": "mock",
+      "quoteUsd": 0,
+      "status": "done",
+      "stepId": "stitch"
+    }
+  ],
+  "zap": "my-zap",
+  "zapUrl": "mock://zap/my-zap/run_m3x9k2_a1b2c3/Zap.mp4"
+}
+```
+
+**Example — live plan**
+
+```bash
+zap run agent/skills/zap-my-zap/Zap.md --live --input PROMPT="sunset over mountains"
+# Use the web runtime to submit provider jobs.  run_m3x9k2_a1b2c3
+```
+
+<Note>
+  A live run sets `status: "queued"` and `mode: "live"`. `zapUrl` is omitted until the web runtime processes the job. `quoteUsd` reflects the estimated spend computed from per-model rates.
+</Note>
+
+---
+
+## `zap status [runId]`
+
+**Usage**
+
+```bash
+zap status [runId] [--json]
+```
+
+**Description**
+
+Reads local run artifacts from `.zap/runs/`. Without a `runId`, lists all run IDs stored locally. With a `runId`, prints the status and URL for that specific run.
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--json` | For list: `{ "runs": ["run_..."] }`. For detail: the full `result.json` object |
+
+**Example**
+
+```bash
+zap status
+# run_m3x9k2_a1b2c3
+# run_m3x8a1_b2c3d4
+```
+
+```bash
+zap status run_m3x9k2_a1b2c3
+# run_m3x9k2_a1b2c3 done mock://zap/my-zap/run_m3x9k2_a1b2c3/Zap.mp4
+```
+
+```bash
+zap status run_m3x9k2_a1b2c3 --json
+```
+
+```json
+{
+  "runId": "run_m3x9k2_a1b2c3",
+  "status": "done",
+  "mode": "mock",
+  "zap": "my-zap",
+  "zapUrl": "mock://zap/my-zap/run_m3x9k2_a1b2c3/Zap.mp4"
+}
+```
+
+---
+
+## `zap add <name>`
+
+**Usage**
+
+```bash
+zap add <name> [--force] [--json]
+```
+
+**Description**
+
+Copies a pre-built recipe from the bundled registry into `agent/skills/` in your project. The `name` argument may omit the `zap-` prefix; it will be added automatically.
+
+**Must be run from a Zap project root.**
+
+**Available registry entries:**
+
+| Name | Description |
+|------|-------------|
+| `zap-world-cup-entrance` | World Cup-style entrance video recipe |
+| `zap-caught-by-the-cam` | Caught-by-the-cam viral content recipe |
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--force` | Overwrite files in the destination directory if they already exist |
+| `--json` | Emit JSON output: `{ "ok": true, "targetDir": "<path>" }` |
+
+**Example**
+
+```bash
+zap add zap-world-cup-entrance
+# Added zap-world-cup-entrance to agent/skills/zap-world-cup-entrance
+```
+
+```bash
+zap add world-cup-entrance --json
+```
+
+```json
+{
+  "ok": true,
+  "targetDir": "/home/user/my-app/agent/skills/zap-world-cup-entrance"
+}
+```
+
+---
+
+## `zap docs [topic]`
+
+**Usage**
+
+```bash
+zap docs [topic] [--json]
+```
+
+**Description**
+
+Prints bundled documentation to stdout. If no topic is provided or the topic is not found, lists all available topics.
+
+**Available topics:**
+
+| Alias | Resolves to |
+|-------|-------------|
+| `agents` | `quickstart/agents` |
+| `cli` | `reference/cli` |
+| `deploy` | `deploy` |
+| `providers` | `providers` |
+| `runtime` | `reference/runtime` |
+| `schema` | `zap-spec` |
+| `supabase-secrets` | `deployment/supabase-secrets` |
+| `vercel` | `deployment/vercel` |
+| `zap-spec` | `zap-spec` |
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Emit `{ "content": "...", "file": "...", "requestedTopic": "...", "topic": "..." }` — or `{ "requestedTopic": "...", "topics": [...] }` if topic not found |
+
+**Example**
+
+```bash
+zap docs schema
+# (prints zap-spec.md to stdout)
+```
+
+```bash
+zap docs unknown-topic
+# agents
+# cli
+# deploy
+# providers
+# ...
+```
+
+---
+
+## `zap skills [generate|update|check]`
+
+**Usage**
+
+```bash
+zap skills [generate|update|check] [--json]
+```
+
+**Description**
+
+Manages `skills/skills-manifest.json`, a content-addressed inventory of all skill directories. The manifest records each skill's name, file count, SHA-256 hash, and relative path.
+
+| Subcommand | Behavior |
+|------------|----------|
+| `generate` (default) | Write a fresh `skills-manifest.json` |
+| `update` | Alias for `generate`; same behavior |
+| `check` | Compare on-disk skills against the existing manifest; exits with code `1` if differences are found |
+
+The `check` subcommand is used in CI to ensure the manifest stays in sync with skill changes.
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--json` | For `generate`/`update`: emit the full manifest object. For `check`: emit `{ "ok": bool, "differences": [...], "manifestPath": "..." }` |
+
+**Example**
+
+```bash
+zap skills generate
+# Generated skills/skills-manifest.json
+# zap-my-zap 5 a1b2c3d4e5f6
+```
+
+```bash
+zap skills check
+# ok skills/skills-manifest.json
+```
+
+```bash
+zap skills check --json
+```
+
+```json
+{
+  "differences": [],
+  "manifestPath": "/home/user/my-app/skills/skills-manifest.json",
+  "ok": true
+}
+```
+
+---
+
+## `zap doctor`
+
+**Usage**
+
+```bash
+zap doctor [--json]
+```
+
+**Description**
+
+Runs a series of environment health checks and reports `ok` or `warn` for each. Does not throw on failures — all results are advisory.
+
+| Check | Passes when |
+|-------|-------------|
+| `node` | Node.js major version ≥ 24 |
+| `package` | `package.json` exists in current directory |
+| `zap skills` | `agent/skills/` directory exists |
+| `convex` | `NEXT_PUBLIC_CONVEX_URL` environment variable is set |
+| `upstash` | Both `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are set |
+| `supabase` | `NEXT_PUBLIC_SUPABASE_URL` and at least one of `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set |
+| `hyperframes` | `npx hyperframes --version` exits successfully (optional) |
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Emit `{ "checks": [{ "name": "...", "ok": bool, "detail": "..." }] }` |
+
+**Example**
+
+```bash
+zap doctor
+# ok node: Node 24.1.0
+# ok package: package.json present
+# ok zap skills: agent/skills present
+# warn convex: NEXT_PUBLIC_CONVEX_URL configured
+# warn upstash: Upstash REST env configured
+# warn supabase: Supabase public env configured
+# ok hyperframes: optional HyperFrames CLI available
+```
+
+---
+
+## `zap dev`
+
+**Usage**
+
+```bash
+zap dev
+```
+
+**Description**
+
+Proxies to `npm run dev` in the current working directory. Starts the Next.js development server. Equivalent to running `npm run dev` directly in your project.
+
+---
+
+## `zap studio`
+
+**Usage**
+
+```bash
+zap studio
+```
+
+**Description**
+
+Starts the Next.js development server with the `--turbo` flag enabled. Proxies to `npm run dev -- --turbo`. Use this for faster incremental builds during recipe and UI development.
+
+---
+
+## `zap info`
+
+**Usage**
+
+```bash
+zap info [--json]
+```
+
+**Description**
+
+Prints environment metadata useful for bug reports and support:
+
+- `cwd` — current working directory
+- `node` — Node.js version string
+- `platform` — OS platform and CPU architecture
+- `version` — CLI version
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Emit all fields as a JSON object |
+
+**Example**
+
+```bash
+zap info
+# cwd: /home/user/my-app
+# node: 24.1.0
+# platform: linux x64
+# version: 0.1.0
+```
+
+```bash
+zap info --json
+```
+
+```json
+{
+  "cwd": "/home/user/my-app",
+  "node": "24.1.0",
+  "platform": "linux x64",
+  "version": "0.1.0"
+}
+```
+
+---
+
+## `zap upgrade`
+
+**Usage**
+
+```bash
+zap upgrade
+```
+
+**Description**
+
+Prints upgrade instructions. In v0.1, the CLI does **not** auto-upgrade. Reinstall the package to get the latest version:
+
+```bash
+npm install -g @wzrdtech/zap@latest
+# or, for a project dependency:
+npm install --save-dev @wzrdtech/zap@latest
+```
+
+```bash
+zap upgrade
+# Upgrade checks are intentionally local in v0.1. Reinstall @wzrdtech/zap to upgrade.
+```
+
+---
+
+## `zap feedback <message>`
+
+**Usage**
+
+```bash
+zap feedback <message> [--json]
+```
+
+**Description**
+
+Saves a feedback message locally to `.zap/feedback.ndjson` in the current working directory. Each entry is a newline-delimited JSON record with the message and an ISO 8601 timestamp. Feedback is stored locally only — nothing is sent to any remote endpoint.
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Emit `{ "ok": true }` on success |
+
+**Example**
+
+```bash
+zap feedback "The mock run output is very helpful"
+# Feedback saved locally.
+```
+
+---
+
+## `zap telemetry [on|off]`
+
+**Usage**
+
+```bash
+zap telemetry [on|off|status] [--json]
+```
+
+**Description**
+
+Manages the local telemetry preference, stored in `.zap/telemetry.json`. **Telemetry is off by default** and must be explicitly enabled. Running `zap telemetry` without an argument (or with `status`) reports the current state without changing it.
+
+| Argument | Behavior |
+|----------|----------|
+| `on` | Enable telemetry; writes `{ "enabled": true }` to `.zap/telemetry.json` |
+| `off` | Disable telemetry; writes `{ "enabled": false }` to `.zap/telemetry.json` |
+| _(none)_ or `status` | Report current state without modifying the file |
+
+**Flags**
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Emit `{ "enabled": true/false }` |
+
+**Example**
+
+```bash
+zap telemetry
+# Telemetry off
+
+zap telemetry on
+# Telemetry on
+
+zap telemetry --json
+```
+
+```json
+{
+  "enabled": true
+}
+```

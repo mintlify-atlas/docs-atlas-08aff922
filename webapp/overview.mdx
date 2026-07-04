@@ -1,0 +1,128 @@
+---
+title: "Zap Web App: Creator Studio and API Surface"
+sidebarTitle: "Overview"
+description: "The Zap web app at zap.wzrd.tech hosts the creator runner, agent studio, gallery, docs, and REST API. Learn the route map and auth posture."
+---
+
+The Zap web app, deployed at [zap.wzrd.tech](https://zap.wzrd.tech), is the primary surface for everyone who builds with or runs Zap. **Creators** use it to trigger one-click recipe runs and manage their provider vault. **Agents** (Codex, Claude Code, Cursor, OpenClaw, Hermes, and similar tools) use the skill manifest endpoints and mock run commands as a starting point. **Developers** call the REST API directly to integrate recipe execution into their own pipelines.
+
+## Primary Routes
+
+| Route | Description |
+|---|---|
+| `/` | Public landing page — showcases installed recipes, signals the runtime contract, and links to the agent quickstart. |
+| `/gallery` | Installed Zap gallery — browse every recipe packaged in the current deployment. |
+| `/docs` | Docs entry point — full reference documentation browsable in-app. |
+| `/quickstart` | Agent quickstarts for Codex, Claude Code, Cursor, OpenClaw, Hermes, and similar tools. |
+| `/studio` | Eve-powered agent studio — chat-driven recipe authoring and execution. |
+| `/zap/[slug]` | One-click creator runner for a specific recipe slug (e.g. `/zap/world-cup-entrance`). |
+| `/runs/[runId]` | Run progress and output detail — real-time step states and output URLs for a completed or in-flight run. |
+| `/settings` | Wallet auth and BYOK provider secrets — connect a Thirdweb wallet and manage encrypted provider keys. |
+
+## Auth Posture
+
+Zap uses a tiered auth model designed to keep demos frictionless while protecting live spending and provider credentials.
+
+**Public — no auth required**
+
+- All documentation pages (`/docs`, `/quickstart`)
+- The gallery and recipe detail pages
+- Mock demo runs via `POST /api/zaps/run` with `"live": false`
+- Skill manifest endpoints (`/api/skills`, `/api/skills/[skill]`)
+
+**Protected — wallet-authenticated Supabase bearer token required**
+
+- Creator live runs (`POST /api/zaps/run` with `"live": true`) — the server rejects requests without a valid bearer token before dispatching to any provider
+- Provider secret management (`GET /api/secrets`, `PUT /api/secrets`, `DELETE /api/secrets`) — all mutations require the authenticated owner's JWT
+
+**Legacy Basic Auth**
+
+Certain provider proxy surfaces and Eve-adjacent endpoints may still be protected by HTTP Basic Auth where explicitly configured. Check your deployment environment variables if you encounter `401` responses on `/api/providers/*` routes.
+
+## REST API Overview
+
+<CardGroup cols={2}>
+  <Card title="POST /api/zaps/run" icon="play" href="/webapp/overview#post-apizapsrun">
+    Execute a recipe pipeline. Pass `"live": true` plus a bearer token to route to real providers; omit it for a zero-spend mock run.
+  </Card>
+  <Card title="GET /api/skills" icon="list" href="/webapp/overview#get-apiskills">
+    Return the full skill manifest — recipe names, hashes, and download URLs — used by agents to bootstrap a project.
+  </Card>
+  <Card title="PUT /api/secrets" icon="key" href="/webapp/auth-secrets">
+    Upsert an encrypted BYOK provider key for the authenticated creator. Keys are stored in Supabase and never returned in plaintext to the browser.
+  </Card>
+  <Card title="POST /api/auth/wallet-proof" icon="wallet" href="/webapp/auth-secrets#connecting-your-wallet">
+    Exchange a Thirdweb EIP-191 wallet signature for a Supabase Auth session token used by all subsequent API calls.
+  </Card>
+</CardGroup>
+
+### POST /api/zaps/run
+
+Executes a named recipe. The `slug` field maps to a file under `agent/skills/`.
+
+```http
+POST /api/zaps/run
+Content-Type: application/json
+Authorization: Bearer <supabase-session-token>   # required only when live=true
+```
+
+```json
+{
+  "slug": "world-cup-entrance",
+  "inputs": { "teamName": "Zap FC" },
+  "live": false,
+  "extendCount": 0
+}
+```
+
+**Response (mock)**
+
+```json
+{
+  "mode": "mock",
+  "status": "done",
+  "spendUsd": 0,
+  "zapUrl": "mock://zap/world-cup-entrance/Zap.mp4"
+}
+```
+
+When `live` is `true` and the token is valid, the server resolves provider keys from the caller's Supabase vault and dispatches the run to real providers.
+
+### GET /api/skills
+
+Returns the full skill download manifest. The `origin` of the request is used to build absolute download URLs, so agents calling from localhost get local URLs.
+
+```http
+GET /api/skills
+```
+
+```json
+{
+  "skills": [
+    {
+      "skill": "zap",
+      "hash": "abc123",
+      "url": "https://zap.wzrd.tech/api/skills/zap"
+    },
+    {
+      "skill": "zap-authoring",
+      "hash": "def456",
+      "url": "https://zap.wzrd.tech/api/skills/zap-authoring"
+    }
+  ]
+}
+```
+
+Individual skill content is fetched at `GET /api/skills/[skill]`. Append `?format=json` to receive a JSON envelope instead of raw Markdown.
+
+## Smoke Test After Deploy
+
+Run these three checks immediately after deploying a new version to confirm the app and key API routes are up:
+
+```bash
+curl -I https://zap.wzrd.tech/
+curl -I https://zap.wzrd.tech/docs
+curl -I https://zap.wzrd.tech/studio
+```
+
+All three should return `HTTP/2 200`. A non-200 on `/studio` usually indicates a missing environment variable for the Eve agent backend.

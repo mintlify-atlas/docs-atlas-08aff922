@@ -1,0 +1,120 @@
+{
+  "projectType": "saas",
+  "projectName": "Zap",
+  "projectDescription": "Zap is an agent-first framework and CLI for building, validating, and running one-click generative video recipes powered by AI providers and the Eve agent runtime.",
+  "theme": "luma",
+  "primaryColor": "#5c80aa",
+  "lightColor": "#1f2a3b",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "quickstart-agents"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/zap-spec",
+              "concepts/steps",
+              "concepts/budget",
+              "concepts/providers"
+            ]
+          },
+          {
+            "group": "Web App",
+            "pages": [
+              "webapp/overview",
+              "webapp/studio",
+              "webapp/auth-secrets"
+            ]
+          },
+          {
+            "group": "Agent Framework",
+            "pages": [
+              "agent/overview",
+              "agent/skills",
+              "agent/eve"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/vercel",
+              "deployment/supabase-secrets",
+              "deployment/convex"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "CLI",
+            "pages": [
+              "reference/cli",
+              "reference/cli-flags"
+            ]
+          },
+          {
+            "group": "Schema",
+            "pages": [
+              "reference/schema",
+              "reference/step-kinds",
+              "reference/runtime"
+            ]
+          },
+          {
+            "group": "Support",
+            "pages": [
+              "reference/troubleshooting"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Zap.md recipe files with YAML frontmatter defining provider pipelines",
+    "CLI (`@wzrdtech/zap`) with init, new, validate, lint, run, status, and more",
+    "Mock mode for zero-cost testing and live mode for real provider execution",
+    "Multi-provider routing: GMI Cloud, fal, and BYOK secret types",
+    "Budget enforcement: per-recipe cost caps enforced at CLI and web runtime",
+    "Convex-backed run state with Upstash idempotency and poll queue",
+    "Eve agent runtime with skill directories for AI-assisted recipe authoring",
+    "HyperFrames stitching for HTML-composed video artifacts",
+    "Wallet-authenticated BYOK provider secrets via Supabase"
+  ],
+  "publicApiSurface": [
+    "zap init <dir>",
+    "zap new <slug>",
+    "zap validate [Zap.md]",
+    "zap lint [Zap.md]",
+    "zap run <Zap.md> [--live] [--input KEY=VALUE]",
+    "zap status [runId]",
+    "zap add <registry-name>",
+    "zap docs [topic]",
+    "zap skills [generate|update|check]",
+    "zap doctor",
+    "zap studio",
+    "zap dev",
+    "POST /api/zaps/run",
+    "GET /api/skills",
+    "GET /api/skills/[skill]",
+    "POST /api/secrets",
+    "POST /api/auth/wallet-proof",
+    "parseZapMarkdown(markdown: string): ZapSpec",
+    "planZapRun(zap: ZapSpec, extendCount: number): ZapPlan",
+    "assertWithinBudget(plan: ZapPlan): void",
+    "quoteStep(step: ZapStep): number",
+    "expandRepeatSteps(zap: ZapSpec, extendCount: number): PlannedZapStep[]"
+  ]
+}

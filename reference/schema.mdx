@@ -1,0 +1,319 @@
+---
+title: "Zap Recipe Schema: Full Field Reference"
+sidebarTitle: "Schema"
+description: "Complete Zod-validated schema reference for Zap.md frontmatter — every field, type, default value, and constraint extracted from the @wzrdtech/core package."
+---
+
+The `@wzrdtech/core` package defines the canonical Zod schema for Zap recipes. Every field listed here is validated by `parseZapMarkdown()` before any run begins — if your `Zap.md` frontmatter fails validation, no provider jobs are submitted and the error is surfaced immediately with the offending field path.
+
+## TypeScript Types
+
+`@wzrdtech/core` exports the following types, all inferred directly from their Zod schemas:
+
+```typescript
+import type { ZapSpec, ZapStep, ZapStepKind, ZapInput, PublicZapSpec } from "@wzrdtech/core";
+
+// Full recipe spec — parsed and validated from Zap.md frontmatter
+type ZapSpec = { ... }
+
+// A single pipeline step
+type ZapStep = { ... }
+
+// Union of all 11 supported step kinds
+type ZapStepKind =
+  | "image.gen" | "image.edit"
+  | "video.gen" | "video.extend" | "video.edit" | "video.upscale"
+  | "audio.tts" | "audio.music" | "audio.sfx"
+  | "keyframes" | "stitch";
+
+// A validated input declaration
+type ZapInput = { ... }
+
+// ZapSpec with an added `title` field (titleized from the slug)
+type PublicZapSpec = ZapSpec & { title: string };
+```
+
+---
+
+## ZapSpec Fields
+
+Top-level fields of the `zapSpecSchema`. All fields are required unless a default is noted.
+
+<ParamField path="zap" type="string" required>
+  Recipe slug. Used as the identifier for the Zap in Convex, the CLI, and the API. Must be at least 1 character. By convention, use kebab-case (e.g. `launch-trailer`).
+</ParamField>
+
+<ParamField path="version" type="integer" required>
+  Positive integer recipe version. Increment when making breaking changes to step structure or inputs. Stored on every Convex run record alongside the recipe slug.
+</ParamField>
+
+<ParamField path="description" type="string" required>
+  Human-readable description of what the recipe produces. Shown in the web UI and surfaced via `publicZapSpec()`.
+</ParamField>
+
+<ParamField path="budget.estimate_usd" type="number" required>
+  Non-negative estimated cost for one full run at the default `extendCount`. Used for display and compared against `cap_usd` during planning. Set to `0` for mock/free recipes.
+</ParamField>
+
+<ParamField path="budget.cap_usd" type="number" required>
+  Positive hard cap in USD. `assertWithinBudget()` throws if the planned run cost exceeds this value before any provider jobs are submitted.
+</ParamField>
+
+<ParamField path="defaults.provider" type="string" default="gmi">
+  Default provider for all steps that do not declare their own `provider`. Must be a registered provider adapter ID. Built-in values: `gmi`, `fal`, `mock`.
+</ParamField>
+
+<ParamField path="defaults.aspect" type="string">
+  Optional default aspect ratio string forwarded to provider adapters that accept it (e.g. `"16:9"`, `"9:16"`). Steps can override at the model level.
+</ParamField>
+
+<ParamField path="inputs" type="Record<string, ZapInput>" default="{}">
+  Map of input variable names to their `ZapInput` declarations. Keys must be `UPPER_SNAKE_CASE` by convention and are referenced in prompt files as `{VARIABLE_NAME}`. `validateVariables()` will throw if a prompt file references an undeclared input.
+</ParamField>
+
+<ParamField path="steps" type="ZapStep[]" required>
+  Ordered array of pipeline steps. At least 1 step is required. Steps are executed in dependency order derived from their `inputs` references. See [Step Kinds](/reference/step-kinds) for full step documentation.
+</ParamField>
+
+<ParamField path="output" type="string" default="Zap.mp4">
+  Filename for the final output artifact. Defaults to `Zap.mp4`. The stitch step writes its result to this path on local runs and to Blob storage on web runs.
+</ParamField>
+
+---
+
+## ZapInput Fields
+
+Declares a user-supplied input variable. Referenced in prompt files as `{VARIABLE_NAME}`.
+
+<ParamField path="type" type="string" required>
+  Input widget type. Must be one of:
+
+  | Value | Description |
+  |---|---|
+  | `string` | Single-line text |
+  | `textarea` | Multi-line text |
+  | `image` | Image upload or URL |
+  | `video` | Video upload or URL |
+  | `select` | Dropdown — requires `options` array |
+  | `number` | Numeric input |
+</ParamField>
+
+<ParamField path="label" type="string">
+  Display label shown in the web UI above the input widget. Falls back to the variable name if omitted.
+</ParamField>
+
+<ParamField path="hint" type="string">
+  Helper text shown below the input widget to guide the user. Optional.
+</ParamField>
+
+<ParamField path="required" type="boolean" default="false">
+  When `true`, `validateRequiredInputs()` will throw before the run is submitted if this input is absent from the request payload.
+</ParamField>
+
+<ParamField path="options" type="string[]">
+  Array of allowed values for `type: select` inputs. Ignored for all other types.
+</ParamField>
+
+---
+
+## ZapStep Fields
+
+Every step in the `steps` array is validated against `zapStepSchema`.
+
+<ParamField path="id" type="string" required>
+  Unique step identifier within the recipe. Must be at least 1 character. `validateDuplicateStepIds()` throws on collision. Used by downstream steps in their `inputs` arrays and surfaced in all Convex step records.
+</ParamField>
+
+<ParamField path="kind" type="ZapStepKind" required>
+  The generation category for this step. Determines which provider capability is invoked. See [Step Kinds](/reference/step-kinds) for descriptions of all 11 values.
+</ParamField>
+
+<ParamField path="provider" type="string">
+  Override the `defaults.provider` for this step only. Use `mock` for zero-cost development steps within an otherwise live recipe.
+</ParamField>
+
+<ParamField path="model" type="string">
+  Model identifier forwarded to the provider adapter. Rate table in the planner uses this field for cost estimation (e.g. `seedance-2-0-260128`, `fal-ai/flux/dev`).
+</ParamField>
+
+<ParamField path="prompt" type="string">
+  Path to a Markdown prompt file relative to the recipe root (e.g. `prompts/initial-frame.md`). Variable references of the form `{VARIABLE_NAME}` are resolved against the `inputs` map at validation time.
+</ParamField>
+
+<ParamField path="inputs" type="string[]">
+  Array of upstream step `id` values whose outputs are passed as inputs to this step. The order is significant for providers that accept multiple reference assets.
+</ParamField>
+
+<ParamField path="duration_s" type="number">
+  Positive clip duration in seconds. Used by `quoteStep()` to estimate provider cost for time-billed models (e.g. `perSecond` rates). Required for `video.gen` and `video.extend` steps on most providers.
+</ParamField>
+
+<ParamField path="candidates" type="integer">
+  Number of generation candidates to request from the provider. Integer between 1 and 16. When `>1`, the runtime generates multiple outputs and the best is selected (optionally via RLHF scoring).
+</ParamField>
+
+<ParamField path="repeat" type="object">
+  Controls the variable-length extension chain for `video.extend` steps. The planner calls `expandRepeatSteps()` to flatten repeat steps into numbered instances.
+
+  | Sub-field | Type | Description |
+  |---|---|---|
+  | `min` | integer ≥ 0 | Minimum expansions (default: 0) |
+  | `max` | integer 0–64 | Maximum expansions (default: 64) |
+  | `default` | integer ≥ 0 | Default expansion count shown in the UI |
+</ParamField>
+
+<ParamField path="stitch" type="ZapStitch">
+  Stitch configuration for `kind: stitch` steps. See [ZapStitch Fields](#zapstitch-fields) below.
+</ParamField>
+
+<ParamField path="tier" type='"draft" | "final"'>
+  Optional quality tier hint forwarded to the provider. `draft` may use cheaper or faster model variants; `final` targets the highest quality path.
+</ParamField>
+
+<ParamField path="rlhf" type='boolean | "optional"'>
+  Human feedback flag. `true` pauses the run after this step and waits for a human vote. `"optional"` collects feedback without blocking. `false` or omitted disables RLHF for this step.
+</ParamField>
+
+<ParamField path="shared" type="boolean">
+  When `true`, this step's output asset is eligible to be surfaced publicly (e.g. in a community gallery). Defaults to `false`.
+</ParamField>
+
+<ParamField path="reference_images" type="string[]">
+  Array of image URLs or local paths to use as reference images for this step. Forwarded to providers that support reference-based generation (e.g. character consistency).
+</ParamField>
+
+---
+
+## ZapStitch Fields
+
+The `stitch` object configures how assets are assembled into the final output. Used on `kind: stitch` steps; defaults are applied automatically if the field is omitted.
+
+<ParamField path="stitch.engine" type="string" default="auto">
+  Stitching engine to use.
+
+  | Value | Description |
+  |---|---|
+  | `auto` | Let the runtime choose the best available engine |
+  | `local` | FFmpeg-based local stitching — always available, no extra dependencies |
+  | `hyperframes` | HTML composition via the HyperFrames CLI — falls back to `local` if the CLI is not installed |
+</ParamField>
+
+<ParamField path="stitch.format" type="string" default="mp4">
+  Output container format. `mp4` (H.264, wide compatibility) or `webm` (VP9, smaller file size).
+</ParamField>
+
+<ParamField path="stitch.quality" type="string" default="standard">
+  Encode quality preset. `draft` (fast preview), `standard` (default), or `high` (production quality, slower encode).
+</ParamField>
+
+<ParamField path="stitch.fps" type="integer">
+  Output frame rate. Integer between 1 and 120. When omitted, the engine inherits the frame rate of the source clips.
+</ParamField>
+
+---
+
+## Core API
+
+All functions are exported from `@wzrdtech/core`.
+
+### Parsing & Validation
+
+```typescript
+// Parse a Zap.md string into a validated ZapSpec.
+// Throws on YAML syntax errors, schema violations,
+// undeclared input variables, or duplicate step IDs.
+parseZapMarkdown(markdown: string): ZapSpec
+
+// Strip the YAML frontmatter block from a Zap.md string.
+extractFrontmatter(markdown: string): string
+
+// Assert that all {VARIABLE} references in prompt paths
+// correspond to declared inputs. Called inside parseZapMarkdown().
+validateVariables(spec: ZapSpec): void
+
+// Assert that no two steps share the same id.
+// Called inside parseZapMarkdown().
+validateDuplicateStepIds(spec: ZapSpec): void
+
+// Assert that all inputs marked required: true are
+// present in the run's inputs payload.
+validateRequiredInputs(zap: ZapSpec, inputs: Record<string, unknown>): void
+
+// Derive a PublicZapSpec by titleizing the slug
+// (e.g. "launch-trailer" → { ..., title: "Launch Trailer" }).
+publicZapSpec(spec: ZapSpec): PublicZapSpec
+```
+
+### Planning & Budget
+
+```typescript
+// Expand repeat steps and compute the estimated run cost.
+// extendCount controls how many video.extend iterations to plan.
+planZapRun(zap: ZapSpec, extendCount: number): ZapPlan
+
+// Throw if the plan's estimateUsd exceeds the recipe's budget.cap_usd.
+assertWithinBudget(plan: ZapPlan): void
+
+// Return the estimated USD cost for a single step
+// based on the model rate table in planner.ts.
+quoteStep(step: ZapStep): number
+
+// Flatten video.extend steps into numbered PlannedZapStep instances.
+// Non-extend steps are passed through unchanged.
+expandRepeatSteps(zap: ZapSpec, extendCount: number): PlannedZapStep[]
+```
+
+### Planner Types
+
+```typescript
+type PlannedZapStep = ZapStep & {
+  originalId: string;   // the id from the recipe before expansion
+  repeatIndex?: number; // 1-based index for expanded repeat steps
+};
+
+type ZapPlan = {
+  budgetCapUsd: number;
+  estimateUsd: number;
+  extendCount: number;
+  steps: PlannedZapStep[];
+  zap: string;
+};
+```
+
+---
+
+## Minimal Recipe Example
+
+```yaml
+---
+zap: launch-trailer
+version: 1
+description: A short creator video.
+budget:
+  estimate_usd: 0
+  cap_usd: 5
+defaults:
+  provider: mock
+inputs:
+  PROMPT:
+    type: textarea
+    required: true
+steps:
+  - id: initial_frame
+    kind: image.gen
+    provider: mock
+    model: mock-image
+    prompt: prompts/initial-frame.md
+  - id: initial_gen
+    kind: video.gen
+    provider: mock
+    model: mock-video
+    inputs: [initial_frame]
+    duration_s: 15
+    prompt: prompts/initial-gen.md
+  - id: stitch
+    kind: stitch
+    inputs: [initial_gen]
+output: Zap.mp4
+---
+```

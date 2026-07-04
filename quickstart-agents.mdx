@@ -1,0 +1,91 @@
+---
+title: "Configure Coding Agents to Use Zap"
+sidebarTitle: "Agent Setup"
+description: "Point Codex, Claude Code, Cursor, or any coding agent at Zap's skill registry and CLI so it can author, validate, and run recipes autonomously."
+---
+
+Zap is designed from the ground up for agent-first workflows. Each `agent/skills/zap-<slug>/` directory is a self-contained portable capability: a `SKILL.md` that describes when and how to use the recipe, a `Zap.md` whose frontmatter is directly executable metadata, and prompt files that ground the agent's creative output. Because the schema is machine-readable and the CLI produces structured JSON output, any coding agent that can run shell commands — Codex, Claude Code, Cursor, OpenClaw, Hermes, and others — can author new recipes, validate them, run them in mock mode, and surface results to creators without any custom tooling.
+
+## Machine-Readable Skill Registry
+
+Before editing any recipe, point your agent at the remote skill registry so it has an up-to-date view of available capabilities and authoring conventions:
+
+```text
+https://zap.wzrd.tech/api/skills
+https://zap.wzrd.tech/api/skills/zap
+https://zap.wzrd.tech/api/skills/zap-authoring
+https://zap.wzrd.tech/api/skills/zap?format=json
+```
+
+The `/api/skills` endpoint returns a manifest of every registered skill. The `/api/skills/zap` and `/api/skills/zap-authoring` endpoints return the core Zap framework skill and the authoring skill respectively. Append `?format=json` for structured JSON output instead of Markdown prose.
+
+## Agent Prompts by Tool
+
+Use the prompt below for your specific agent tool. Each prompt tells the agent where to find skills, which CLI commands to run for validation and execution, and how to treat provider spend.
+
+<Tabs>
+  <Tab title="Codex">
+    ```text
+    Use the Zap skills from https://zap.wzrd.tech/api/skills and validate with:
+    npx @wzrdtech/zap@0.1.0 validate
+    npx @wzrdtech/zap@0.1.0 run agent/skills/zap-world-cup-entrance/Zap.md --json
+    ```
+  </Tab>
+
+  <Tab title="Claude Code">
+    ```text
+    Read AGENTS.md, then use skills/zap-authoring/SKILL.md before editing any Zap.md recipe.
+    Run zap validate and zap lint before committing.
+    ```
+  </Tab>
+
+  <Tab title="Cursor">
+    ```text
+    Use Zap.md frontmatter as the source of truth. Keep prompt files under the same skill directory.
+    Default to provider: mock until the user asks for live spend.
+    ```
+  </Tab>
+
+  <Tab title="OpenClaw / Hermes">
+    ```text
+    Treat each agent/skills/zap-*/ directory as a portable capability.
+    Use docs/reference/schema.md for recipe fields and docs/reference/cli.md for command behavior.
+    ```
+  </Tab>
+</Tabs>
+
+## Agent Contract
+
+Any agent operating on a Zap project must follow these rules to ensure recipes remain valid, provider spend stays opt-in, and run results are reproducible:
+
+- **Read `SKILL.md` first.** Before editing or running a recipe, read `SKILL.md` to understand the intended use case, input requirements, and any special authoring notes for that skill.
+- **Treat `Zap.md` frontmatter as executable recipe metadata.** The YAML block between the `---` delimiters is the machine contract — do not move fields to prose, do not duplicate declarations in comments.
+- **Keep prompts in `prompts/*.md`.** Creative instructions belong in dedicated prompt files under the skill directory, referenced from step `prompt:` fields. Do not inline prompt text in `Zap.md`.
+- **Use deterministic `run_zap` or `zap run` for creator flows.** When executing a recipe on behalf of a creator, always go through the CLI (`zap run`) or the `run_zap` Eve tool. Do not call provider APIs directly.
+- **Use primitive tools only for creative development or new recipe authoring.** Direct model calls are acceptable when exploring outputs during recipe authoring, but the final pipeline must be expressed as `Zap.md` steps.
+- **Keep provider spend opt-in.** Default to `provider: mock` in all scaffolded and authored recipes. Never add `--live` or switch a recipe's `defaults.provider` away from `mock` without explicit creator instruction and confirmed credentials.
+
+## Root Flow Diagram
+
+The following diagram shows the canonical execution flow from creator request to final asset. Agents should map their tool calls onto this sequence:
+
+```text
+creator request
+  -> select zap-<slug> skill
+  -> collect declared inputs
+  -> validate budget
+  -> run mock or live pipeline
+  -> return run id and final asset URL
+```
+
+Steps in plain terms:
+
+1. The agent identifies the correct `zap-<slug>` skill directory for the creator's intent (or scaffolds a new one with `zap new`).
+2. It reads `Zap.md` to discover required `inputs` and prompts the creator to supply any that are missing.
+3. It calls `zap validate` to confirm the recipe is schema-valid and the budget cap is set.
+4. It calls `zap run <Zap.md> --json` (mock by default) and captures the `runId` and `zapUrl` from the JSON result.
+5. It returns the `runId` and asset URL to the creator, or passes them to a downstream tool.
+
+<Note>
+  For a deeper look at the agent framework architecture — Eve conventions, the `run_zap` tool, step primitives, and how Convex and Upstash back the live runtime — see [Agent Overview](/agent/overview).
+</Note>

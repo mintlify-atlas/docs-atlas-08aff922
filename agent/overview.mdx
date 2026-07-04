@@ -1,0 +1,88 @@
+---
+title: "Zap Agent Framework: Eve-Powered Recipe Execution"
+sidebarTitle: "Overview"
+description: "Zap is an Eve app convention. Recipes are portable skill directories that coding agents read, edit, validate, and run using the same CLI commands as humans."
+---
+
+Zap's agent framework is built on [Eve](agent/eve) — every recipe is a portable skill directory that both human creators and AI agents treat as a self-contained executable unit. Agents read the same `SKILL.md` and `Zap.md` files a human would open, collect inputs declared in frontmatter, and run the pipeline through the same CLI commands available in a terminal. There is no separate "agent mode"; the skill directory is the interface for everyone.
+
+## Agent Contract
+
+Every agent working with Zap must follow six rules:
+
+<Steps>
+  <Step title="Read SKILL.md first">
+    Before taking any action, load the skill's `SKILL.md`. It tells you when this skill is appropriate, what the recipe does, and where the executable frontmatter lives.
+  </Step>
+  <Step title="Treat Zap.md frontmatter as executable recipe metadata">
+    The YAML front matter in `Zap.md` is the source of truth for steps, inputs, budget caps, providers, and output format. Do not invent steps that are not declared there.
+  </Step>
+  <Step title="Keep prompts in prompts/*.md">
+    All prompt text belongs in `prompts/` files. Reference them from step definitions rather than inlining prompt strings in code or in the tool call.
+  </Step>
+  <Step title="Use deterministic run_zap or zap run for creator flows">
+    When a user asks to run a known recipe, call `run_zap` (or `zap run` from the CLI). Do not improvise undeclared steps for a production creator flow.
+  </Step>
+  <Step title="Use primitive tools only for creative development or new recipe authoring">
+    `generate_image`, `generate_video`, `generate_audio`, and related primitives are for exploration and new recipe development — not for substituting the deterministic creator path.
+  </Step>
+  <Step title="Keep provider spend opt-in">
+    Explain budget quotes before incurring cost. Stop at budget caps and require explicit approval before any expensive or identity-touching generation.
+  </Step>
+</Steps>
+
+## Root Flow
+
+The standard creator flow follows this sequence:
+
+```text
+creator request
+  -> select zap-<slug> skill
+  -> collect declared inputs
+  -> validate budget
+  -> run mock or live pipeline
+  -> return run id and final asset URL
+```
+
+## Remote Skill Registry
+
+Zap provides a hosted registry of published skills. Agents and the CLI can query it to discover and pull recipes:
+
+```text
+https://zap.wzrd.tech/api/skills
+https://zap.wzrd.tech/api/skills/zap
+https://zap.wzrd.tech/api/skills/zap-authoring
+```
+
+Use `zap add <name>` to copy a registry skill into your local `agent/skills/` directory.
+
+## Agent Tools
+
+The following tools are available to the Zap agent under `agent/tools/`. Each is implemented with `defineTool` from `eve/tools` and registered automatically by the Eve runtime.
+
+| Tool | Description |
+|------|-------------|
+| `run_zap` | Execute a Zap recipe deterministically from its frontmatter and return run metadata |
+| `save_zap` | Save an approved `Zap.md` recipe as a packaged Eve skill (requires user approval) |
+| `stitch_zap` | Stitch generated video segments into `Zap.mp4` inside the Eve sandbox using ffmpeg |
+| `edit_video` | Submit a video edit or ReViz request through the Zap provider router (always requires user approval) |
+| `generate_image` | Submit an image generation or image edit request through the Zap provider router |
+| `generate_video` | Submit a video generation or extension request through the Zap provider router (requires approval for durations over 120 s) |
+| `generate_audio` | Submit a voice, music, or SFX request through the Zap provider router |
+| `extract_last_frame` | Extract the last frame from a video inside the Eve sandbox using ffmpeg |
+| `upscale_frame` | Upscale a frame for ExtendGen conditioning |
+| `get_run_status` | Return the current status URL for a Zap run |
+
+### Zap Pipeline Grammar
+
+The canonical pipeline follows:
+
+```text
+InitialFrame -> InitialGen -> InitialGenReViz? -> ExtendGen x N -> Zap.mp4
+```
+
+Prefer cheap image and keyframe iteration before committing to expensive video generation. Use GMI as the primary provider where it supports the requested video capability, and fal as fallback or for image and audio capabilities.
+
+<Note>
+  Skill directories follow a specific file convention. See [agent/skills](agent/skills) for the full format, frontmatter field reference, and instructions on adding registry skills.
+</Note>

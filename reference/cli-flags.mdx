@@ -1,0 +1,244 @@
+---
+title: "Zap CLI Global Flags and Output Formats"
+sidebarTitle: "CLI Flags"
+description: "Reference for Zap CLI flags shared across commands: --json for machine-readable output, --live for provider spend, --input for recipe inputs, and --force."
+---
+
+The Zap CLI uses a consistent flag syntax across all commands. Most flags that control output format or execution mode work on any command that produces output. Flags are parsed uniformly: they accept `--key value`, `--key=value`, or bare `--key` for boolean flags. Flags can appear before or after positional arguments.
+
+---
+
+## Flag Reference
+
+<ParamField query="--json" type="boolean">
+  Emit JSON to stdout instead of human-readable text. All commands that produce output support this flag. Useful for agent consumption, scripting, and piping output to other tools. When set, error messages are still printed to stderr in plain text with a `zap:` prefix.
+
+  ```bash
+  zap validate --json
+  zap run agent/skills/zap-my-zap/Zap.md --json
+  zap doctor --json
+  ```
+</ParamField>
+
+<ParamField query="--live" type="boolean">
+  Allow real provider spend on the `run` command. Without this flag, `run` executes in mock mode: no external API calls are made, all steps resolve instantly, and `quoteUsd` is `0`. With `--live`, the CLI computes a real spend quote from per-model rates and rejects the run if the quote exceeds `budget.cap_usd`.
+
+  ```bash
+  zap run agent/skills/zap-my-zap/Zap.md --live --input PROMPT="sunset"
+  ```
+
+  <Warning>
+    A live run sets `status: "queued"` and requires provider API keys to be configured. Use the web runtime to submit and monitor provider jobs.
+  </Warning>
+</ParamField>
+
+<ParamField query="--input" type="string">
+  Provide a recipe input value as a `KEY=VALUE` pair. This flag is repeatable — pass it multiple times to supply multiple input values. Input keys must match a declared entry in the recipe's `inputs` map.
+
+  ```bash
+  zap run agent/skills/zap-my-zap/Zap.md \
+    --input PROMPT="sunset over mountains" \
+    --input STYLE="cinematic"
+  ```
+
+  In mock mode, required inputs that are not supplied receive placeholder defaults:
+  - Text inputs default to `mock-<lowercased-key>` (e.g. `mock-prompt`)
+  - Image inputs default to `mock://input/<KEY>` (e.g. `mock://input/IMAGE`)
+</ParamField>
+
+<ParamField query="--extend" type="number">
+  Number of `video.extend` step repetitions for the `run` command. Overrides the `repeat.default` value declared in the recipe. The final count is clamped between `repeat.min` and `repeat.max`.
+
+  ```bash
+  zap run agent/skills/zap-my-zap/Zap.md --extend 3
+  ```
+</ParamField>
+
+<ParamField query="--force" type="boolean">
+  Overwrite existing files on `new` and `add` commands. Without this flag, both commands throw an error if any destination file already exists.
+
+  ```bash
+  zap new my-zap --force
+  zap add zap-world-cup-entrance --force
+  ```
+</ParamField>
+
+<ParamField query="--non-interactive" type="boolean">
+  Skip interactive prompts on the `init` command. Use this flag in CI pipelines or scripted project setup where stdin is unavailable.
+
+  ```bash
+  zap init my-app --non-interactive
+  ```
+</ParamField>
+
+<ParamField query="--empty" type="boolean">
+  Skip sample recipe scaffolding on the `init` command. Creates the project structure (`agent/skills/`, `docs/`, `.zap/`, etc.) without generating a starter `Zap.md` recipe.
+
+  ```bash
+  zap init my-app --empty
+  ```
+</ParamField>
+
+<ParamField query="--example" type="string">
+  Use a named example recipe during `init`. The named recipe is scaffolded instead of the default `hello-world` starter.
+
+  ```bash
+  zap init my-app --example world-cup-entrance
+  ```
+</ParamField>
+
+<ParamField query="--version / -v" type="boolean">
+  Print the CLI version and exit. Accepts both `--version` and `-v`, or use `zap --version` as a command.
+
+  ```bash
+  zap --version
+  # 0.1.0
+  ```
+</ParamField>
+
+<ParamField query="--help / -h" type="boolean">
+  Print the help text listing all commands and common flags, then exit. Also triggered by `zap help` or `zap` with no arguments.
+
+  ```bash
+  zap --help
+  zap help
+  ```
+</ParamField>
+
+---
+
+## Flag Syntax Rules
+
+The parser accepts three equivalent forms for any named flag:
+
+```bash
+# Space-separated value
+zap run Zap.md --input PROMPT=hello
+
+# Equals-separated value
+zap run Zap.md --input=PROMPT=hello
+
+# Bare boolean flag
+zap run Zap.md --live
+```
+
+**Repeating a flag** collects values into an array. This is used by `--input` to supply multiple recipe inputs:
+
+```bash
+zap run Zap.md --input PROMPT="text" --input STYLE="cinematic"
+```
+
+Flags can appear before or after positional arguments:
+
+```bash
+# These are equivalent:
+zap run Zap.md --json --live
+zap run --json --live Zap.md
+```
+
+---
+
+## Environment Variable Overrides
+
+Several CLI behaviors can be controlled through environment variables, useful for CI and Docker environments:
+
+| Variable | Effect |
+|----------|--------|
+| `ZAP_PROVIDER=mock` | Override provider selection to `mock` at runtime |
+| `ZAP_LINT_ALLOW_LIVE_DEFAULT=1` | Silence the `zap lint` warning about non-mock `defaults.provider` |
+
+These can be set in your `.env` or `.env.local` file (automatically loaded by the CLI on startup) or exported in your shell:
+
+```bash
+ZAP_LINT_ALLOW_LIVE_DEFAULT=1 zap lint
+```
+
+---
+
+## JSON Output Schema
+
+When `--json` is passed to the `run` command, the output follows this schema:
+
+```json
+{
+  "live": false,
+  "message": "Mock Zap run completed.",
+  "mode": "mock",
+  "quoteUsd": 0,
+  "runId": "run_m3x9k2_a1b2c3",
+  "status": "done",
+  "steps": [
+    {
+      "kind": "image.gen",
+      "model": "mock-image",
+      "provider": "mock",
+      "quoteUsd": 0,
+      "status": "done",
+      "stepId": "initial_frame"
+    },
+    {
+      "kind": "video.gen",
+      "model": "mock-video",
+      "provider": "mock",
+      "quoteUsd": 0,
+      "status": "done",
+      "stepId": "initial_gen"
+    },
+    {
+      "kind": "stitch",
+      "model": "local",
+      "provider": "mock",
+      "quoteUsd": 0,
+      "status": "done",
+      "stepId": "stitch"
+    }
+  ],
+  "zap": "my-zap",
+  "zapUrl": "mock://zap/my-zap/run_m3x9k2_a1b2c3/Zap.mp4"
+}
+```
+
+**Field descriptions:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `live` | boolean | Whether this was a live or mock run |
+| `message` | string | Human-readable status message |
+| `mode` | `"mock"` \| `"live"` | Execution mode |
+| `quoteUsd` | number | Total estimated spend in USD (always `0` in mock mode) |
+| `runId` | string | Unique run identifier; also the directory name under `.zap/runs/` |
+| `status` | `"done"` \| `"queued"` | `"done"` for mock runs; `"queued"` for live runs awaiting web runtime |
+| `steps` | array | Per-step execution detail (see below) |
+| `zap` | string | The recipe slug |
+| `zapUrl` | string \| undefined | Output URL; populated for mock runs; omitted for live runs until the web runtime completes |
+
+**Step object fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `kind` | string | Step type, e.g. `image.gen`, `video.gen`, `stitch` |
+| `model` | string | Model identifier; `"local"` for non-provider steps |
+| `provider` | string | Provider name; `"mock"` in mock mode |
+| `quoteUsd` | number | Per-step spend estimate; `0` in mock mode |
+| `status` | string | Step status |
+| `stepId` | string | Step ID from the recipe |
+
+---
+
+## Safety Defaults
+
+The Zap CLI is designed to be safe by default:
+
+<CardGroup cols={2}>
+  <Card title="Mock by Default" icon="shield">
+    All `zap run` executions are mock unless `--live` is explicitly provided. No provider API calls are made and no real money is spent in mock mode.
+  </Card>
+  <Card title="Telemetry Off" icon="eye-slash">
+    Telemetry is disabled by default. It must be explicitly enabled by running `zap telemetry on`. The preference is stored locally in `.zap/telemetry.json`.
+  </Card>
+</CardGroup>
+
+These defaults ensure that:
+- Agents running `zap run` during recipe development do not incur unexpected provider charges
+- Users retain full control over whether any usage data is collected
+- CI pipelines can safely run `zap validate`, `zap lint`, and `zap skills check` without any credentials or opt-in configuration

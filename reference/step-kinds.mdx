@@ -1,0 +1,272 @@
+---
+title: "Step Kind Reference: All 11 Pipeline Step Types"
+sidebarTitle: "Step Kinds"
+description: "Detailed reference for every Zap step kind — image.gen, video.gen, video.extend, stitch, and more — with fields, provider notes, and YAML examples."
+---
+
+Zap supports 11 step kinds. Each maps to a generation category and is routed to the appropriate provider adapter at runtime — the adapter's `supports(capability, model)` method is checked before any job is submitted. Steps are connected via `inputs` references that name upstream step IDs, forming a directed dependency graph that the runtime resolves in order.
+
+---
+
+## Creative Pipeline Grammar
+
+The canonical pipeline flow for a Zap video recipe is:
+
+```text
+InitialFrame -> InitialGen -> ExtendGen x N -> stitch -> Zap.mp4
+```
+
+An optional revision step can be inserted between `InitialGen` and `ExtendGen`:
+
+```text
+InitialFrame -> InitialGen -> InitialGenReViz? -> ExtendGen x N -> stitch -> Zap.mp4
+```
+
+Audio steps (`audio.tts`, `audio.music`, `audio.sfx`) and `keyframes` can be placed anywhere in the graph and are merged during stitching.
+
+---
+
+## `image.gen`
+
+Generate a first frame, storyboard, character sheet, or reference image. This is typically the first step in a video pipeline — its output is passed as the anchor frame to `video.gen`.
+
+**Key fields:** `model`, `prompt`, `reference_images`, `candidates`, `tier`
+
+```yaml
+- id: initial_frame
+  kind: image.gen
+  provider: mock
+  model: mock-image
+  prompt: prompts/initial-frame.md
+```
+
+<Tip>
+  Set `candidates: 4` combined with `rlhf: true` to generate four candidate frames and have a human (or VLM judge) pick the best before the video pipeline begins.
+</Tip>
+
+---
+
+## `image.edit`
+
+Transform an input image while preserving subject identity. Use `inputs` to reference the upstream step whose output should be edited. Common uses: style transfer, background replacement, lighting adjustment, or inpainting.
+
+**Key fields:** `inputs` (upstream image step ID), `model`, `prompt`, `reference_images`
+
+```yaml
+- id: styled_frame
+  kind: image.edit
+  provider: gmi
+  model: gmi-edit-model
+  inputs: [initial_frame]
+  prompt: prompts/style-transfer.md
+```
+
+---
+
+## `video.gen`
+
+Animate image or prompt inputs into a video clip. The upstream `image.gen` step is typically listed in `inputs` to provide the first frame; `duration_s` sets the clip length billed to the provider.
+
+**Key fields:** `inputs`, `duration_s`, `model`, `prompt`, `candidates`, `tier`
+
+```yaml
+- id: initial_gen
+  kind: video.gen
+  provider: gmi
+  model: seedance-2-0-260128
+  inputs: [initial_frame]
+  duration_s: 5
+  prompt: prompts/initial-gen.md
+```
+
+**Provider notes:**
+- `seedance-2-0-260128` — billed at `$0.07/s`
+- `fal-ai/kling-video/v2.1/pro/image-to-video` — billed at `$0.28/s`
+- `fal-ai/veo3.1` — billed at `$0.45/s`
+
+---
+
+## `video.extend`
+
+Continue a clip from its last frame. The `inputs` field references the step to extend from. Use `repeat` to define a variable-length extension chain — the `extendCount` parameter at run time controls how many copies are instantiated by `expandRepeatSteps()`.
+
+**Key fields:** `inputs`, `duration_s`, `model`, `prompt`, `repeat`
+
+```yaml
+- id: extend
+  kind: video.extend
+  provider: gmi
+  model: seedance-2-0-260128
+  inputs: [initial_gen]
+  duration_s: 5
+  repeat:
+    min: 0
+    max: 4
+    default: 2
+```
+
+The planner expands this into up to 4 numbered steps: `extend_1`, `extend_2`, `extend_3`, `extend_4`. With `extendCount: 2`, only `extend_1` and `extend_2` are submitted.
+
+---
+
+## `video.edit`
+
+Revise a clip with a prompt or composition layer. Use this step to apply motion effects, overlay graphics, adjust pacing, or re-light a clip in post. References an upstream `video.gen` or `video.extend` step via `inputs`.
+
+**Key fields:** `inputs`, `model`, `prompt`, `duration_s`
+
+```yaml
+- id: revised_clip
+  kind: video.edit
+  provider: gmi
+  model: gmi-video-edit
+  inputs: [initial_gen]
+  prompt: prompts/revision.md
+```
+
+---
+
+## `video.upscale`
+
+Produce a higher-resolution version of a clip. Typically placed after the final `video.extend` step and before `stitch`. Uses a dedicated upscale model variant.
+
+**Key fields:** `inputs`, `model`, `duration_s`
+
+```yaml
+- id: upscaled
+  kind: video.upscale
+  provider: gmi
+  model: seedance-2-0-260128-upscale
+  inputs: [extend]
+  duration_s: 5
+```
+
+**Provider notes:** `seedance-2-0-260128-upscale` is billed at `$0.056/s`.
+
+---
+
+## `audio.tts`
+
+Generate voiceover from text. The `prompt` file contains the spoken text with optional `{VARIABLE}` references for dynamic content. Output is a `.wav` asset that the `stitch` step mixes into the final video.
+
+**Key fields:** `model`, `prompt`
+
+```yaml
+- id: voiceover
+  kind: audio.tts
+  provider: gmi
+  model: tts-model
+  prompt: prompts/voiceover.md
+```
+
+---
+
+## `audio.music`
+
+Generate background music for the video. Describe the mood, genre, and tempo in the `prompt` file. Duration is synchronized with the video length at stitch time.
+
+**Key fields:** `model`, `prompt`, `duration_s`
+
+```yaml
+- id: background_music
+  kind: audio.music
+  provider: gmi
+  model: music-gen
+  prompt: prompts/music.md
+  duration_s: 30
+```
+
+---
+
+## `audio.sfx`
+
+Generate sound effects triggered at specific moments in the video. Use the `prompt` file to describe the sound (e.g. "whoosh, cinematic impact"). The `stitch` step positions SFX assets at the correct timestamp.
+
+**Key fields:** `model`, `prompt`
+
+```yaml
+- id: sfx_impact
+  kind: audio.sfx
+  provider: gmi
+  model: sfx-gen
+  prompt: prompts/impact-sfx.md
+```
+
+---
+
+## `keyframes`
+
+Extract, score, or prepare frames for a downstream step. Use this step to isolate key moments from a video clip for reference-based generation, or to provide scored candidate frames to a `video.edit` step. `keyframes` and `stitch` are the only two "local" step kinds — `quoteStep()` returns `$0` for both.
+
+**Key fields:** `inputs`, `keyframes` (provider-specific config record)
+
+```yaml
+- id: extracted_frames
+  kind: keyframes
+  inputs: [initial_gen]
+```
+
+---
+
+## `stitch`
+
+Combine all resolved assets into the final Zap artifact. This must be the last step in the pipeline. The `inputs` array lists every clip and audio asset to include; ordering determines the timeline sequence. `stitch` and `keyframes` are local steps — no provider API call is made and no cost is incurred.
+
+**Key fields:** `inputs`, `stitch` (ZapStitch config)
+
+```yaml
+- id: stitch
+  kind: stitch
+  inputs: [initial_gen]
+  stitch:
+    engine: auto
+    format: mp4
+    quality: standard
+```
+
+### ZapStitch Engine Options
+
+| Engine | Description |
+|---|---|
+| `auto` | Runtime selects the best available engine — prefers `hyperframes` when installed, falls back to `local` |
+| `local` | FFmpeg-based assembly — always available, no extra dependencies |
+| `hyperframes` | HTML composition via the HyperFrames CLI — requires `DESIGN.md` in the recipe root |
+
+### HyperFrames Stitching
+
+Use `engine: hyperframes` when the recipe needs HTML-based composition:
+
+```yaml
+- id: stitch
+  kind: stitch
+  inputs: [upscaled, voiceover, background_music]
+  stitch:
+    engine: hyperframes
+    format: mp4
+    quality: standard
+    fps: 24
+```
+
+<Note>
+  HyperFrames recipes must include a `DESIGN.md` visual identity file before composition HTML is generated. At runtime, Zap writes a minimal temporary `DESIGN.md` automatically so that provider assets render through a compliant HyperFrames project.
+
+  If the HyperFrames CLI is not installed or a generated composition check fails (`npx hyperframes lint` / `validate` / `inspect`), the runtime records the error on the step and falls back to the first resolved stitch asset. The run does not fail.
+</Note>
+
+---
+
+## Step Kind Summary
+
+| Kind | Category | Local | Cost Basis |
+|---|---|---|---|
+| `image.gen` | Image generation | No | Per request |
+| `image.edit` | Image transformation | No | Per request |
+| `video.gen` | Video generation | No | Per second |
+| `video.extend` | Video continuation | No | Per second |
+| `video.edit` | Video revision | No | Per second |
+| `video.upscale` | Video upscaling | No | Per second |
+| `audio.tts` | Text-to-speech | No | Per request |
+| `audio.music` | Music generation | No | Per request |
+| `audio.sfx` | Sound effects | No | Per request |
+| `keyframes` | Frame extraction | **Yes** | $0 |
+| `stitch` | Final assembly | **Yes** | $0 |

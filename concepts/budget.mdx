@@ -1,0 +1,103 @@
+---
+title: "Budget Caps and Cost Estimation in Zap"
+sidebarTitle: "Budget"
+description: "Every Zap recipe declares an estimated cost and a hard cap_usd. Understand how budget enforcement works at the CLI and web runtime, and how model rates are calculated."
+---
+
+Budget is a first-class concept in Zap — every recipe must declare both an estimated cost and a hard spending ceiling before any provider call is made. This makes cost visible and controllable at authoring time, not after the bill arrives. The budget block is validated at parse time, quoted again at plan time, and enforced a final time on the server before provider submission, giving creators three independent opportunities to catch runaway spend before it happens.
+
+## The Budget Block
+
+```yaml
+budget:
+  estimate_usd: 1.25
+  cap_usd: 5
+```
+
+- **`estimate_usd`** — the author's pre-run cost estimate, calculated by summing `quoteStep()` across all planned steps. Must be a non-negative number and must not exceed `cap_usd`.
+- **`cap_usd`** — the hard spending ceiling. Any run whose live quote exceeds this value is rejected before a single provider call is made.
+
+## Enforcement Points
+
+Budget enforcement happens at four distinct points in the Zap lifecycle:
+
+**1. CLI mock runs always quote $0.00**
+
+When running without `--live`, Zap executes in mock mode. All provider steps return deterministic zero-cost outputs. The planner still builds a full plan and prints the quote, but no real money is spent and no budget check is applied.
+
+**2. CLI live plans reject over-budget runs**
+
+When `--live` is passed, the planner calls `planZapRun()` to expand all steps (including `video.extend` repeats), sums per-step costs, and calls `assertWithinBudget()`. If the total quote exceeds `cap_usd`, the run is aborted with an error before any provider is contacted:
+
+```
+Error: Run quote $6.30 exceeds recipe cap $5.00.
+```
+
+**3. Web live runs enforce budget on the server**
+
+Web-initiated live runs replicate the same `assertWithinBudget()` check server-side, before the run job is enqueued for provider submission. This means a malformed client request cannot bypass the cap by skipping the CLI check.
+
+**4. Provider adapters attach observed cost to each run step**
+
+After a step completes, the provider adapter records the actual cost charged by the provider and attaches it to the run step record. This observed cost feeds into post-run reconciliation and is visible in the run history dashboard.
+
+## Model Rates
+
+The Zap planner uses a built-in rate table to estimate costs. Rates are either per-request (flat fee regardless of duration) or per-second (multiplied by `duration_s`):
+
+| Model | Pricing Type | Rate |
+|---|---|---|
+| `fal-ai/flux/dev` | perRequest | $0.03 / request |
+| `fal-ai/kling-video/v2.1/pro/image-to-video` | perSecond | $0.28 / second |
+| `fal-ai/veo3.1` | perSecond | $0.45 / second |
+| `gemini-omni-flash-preview` | perSecond | $0.10 / second |
+| `happyhorse-1.1-i2v` | perSecond | $0.28 / second |
+| `seedance-2-0-260128` | perSecond | $0.07 / second |
+| `seedance-2-0-260128-upscale` | perSecond | $0.056 / second |
+
+Models not in this table (including `mock-*` models and any custom model strings) return a quote of `$0.00`. The `stitch` and `keyframes` step kinds are always local and always quote `$0.00`.
+
+## Cost Calculation
+
+The total estimated cost for a recipe is:
+
+```
+estimate_usd = Σ quoteStep(step) for all planned steps
+```
+
+Where `quoteStep` works as follows:
+
+- If the step is `stitch` or `keyframes` → `$0.00` (local, no provider cost)
+- If the model has a `perRequest` rate → that flat rate
+- If the model has a `perSecond` rate → `rate × duration_s` (defaults to 1 second if `duration_s` is omitted)
+- If the model is unknown → `$0.00`
+
+For example, a recipe with one `fal-ai/flux/dev` image step and two 5-second `seedance-2-0-260128` video steps:
+
+```
+$0.03 + (2 × 5s × $0.07/s) = $0.03 + $0.70 = $0.73
+```
+
+<Warning>
+  `video.extend` steps with a `repeat` block must have **all expansions counted** before submission. The planner calls `expandRepeatSteps()` to unroll repeats into individual concrete steps — each one is quoted separately. If your recipe has `repeat.max: 4` and the caller requests 4 extensions, all four are included in the quote. Always run `--json` in mock mode to verify the expanded step count and total estimate before going live.
+</Warning>
+
+## Mock Run vs Live Run
+
+Use mock mode while authoring and iterating to verify the pipeline structure and see the cost estimate without spending money:
+
+```bash
+# Mock run — zero cost, deterministic outputs, full plan printed as JSON
+npx @wzrdtech/zap@0.1.0 run zap-world-cup-entrance --json
+```
+
+Switch to live mode only after the creator has reviewed and approved the spend:
+
+```bash
+# Live run — real providers, real cost, budget check enforced
+npx @wzrdtech/zap@0.1.0 run zap-world-cup-entrance --live --input SELFIE=./selfie.png
+```
+
+<Tip>
+  If a budget check fails, you have three levers: **lower the step count** (remove or combine steps), **switch to a cheaper model** (e.g. `seedance-2-0-260128` at $0.07/s instead of `fal-ai/veo3.1` at $0.45/s), or **raise `budget.cap_usd`** with explicit owner approval. Never raise `cap_usd` without the recipe owner's knowledge.
+</Tip>

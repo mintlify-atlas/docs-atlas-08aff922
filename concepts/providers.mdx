@@ -1,0 +1,76 @@
+---
+title: "AI Provider Routing and BYOK Keys"
+sidebarTitle: "Providers"
+description: "Zap routes pipeline steps to mock, GMI Cloud, or fal providers. Learn provider priority, how to supply keys, and the supported bring-your-own-key secret types."
+---
+
+Zap separates recipe planning from provider execution. When a run is submitted, the provider router inspects each step's `provider` field (or the recipe's `defaults.provider` fallback) and selects the matching adapter. This decoupling means the same recipe can be executed against the mock adapter for zero-cost development, switched to `gmi` for live production runs, and later migrated to `fal` without changing a single step definition.
+
+## Provider Priority for v1
+
+Zap v1 recognises four provider tiers:
+
+### `mock`
+Deterministic, zero-cost outputs designed for documentation, automated tests, and unauthenticated demos. The mock adapter returns placeholder media assets with predictable filenames and durations. No API key is required. Use mock mode for all recipe authoring and CI validation.
+
+### `gmi`
+The primary live image and video provider. Routes to GMI Cloud infrastructure. Requires a `gmi_api_key` (and optionally `gmi_org_id`) stored in Supabase or supplied via environment variable. This is the default provider when `defaults.provider` is omitted from the recipe.
+
+### `fal`
+The secondary live provider. Routes to the fal.ai platform. Requires a `fal_key`. Used when a step specifies `provider: fal` explicitly, or as a fallback when `gmi` is unavailable for a given model.
+
+### `runware`, `prodia`, `openrouter`, `ai_gateway`
+BYOK-ready (Bring Your Own Key) provider types. These are not in the default routing chain but can be targeted explicitly via step-level `provider` fields when the creator supplies the corresponding secret. See the [BYOK Secret Types](#byok-secret-types) table below.
+
+## Setting the Provider via Environment Variable
+
+For CLI runs you can override the provider for all steps at once using `ZAP_PROVIDER`:
+
+```bash
+ZAP_PROVIDER=mock npx @wzrdtech/zap@0.1.0 run world-cup-entrance --json
+```
+
+This is the recommended way to run mock pipelines in CI without modifying the recipe file.
+
+## Running Live
+
+When you are ready to submit to a real provider, pass the `--live` flag:
+
+```bash
+npx @wzrdtech/zap@0.1.0 run world-cup-entrance --live --input SELFIE=./selfie.png
+```
+
+The CLI will build a full plan, print the cost quote, enforce the budget cap, and then dispatch each step to its configured provider adapter. Provider keys must be available in the environment before this command is run.
+
+## BYOK Secret Types
+
+The following secret types are recognised by the Zap key store. On the web platform these are stored in Supabase and looked up per user before a live run begins.
+
+| Secret Key | Provider | Description |
+|---|---|---|
+| `gmi_api_key` | GMI Cloud | Primary API key for GMI image and video generation |
+| `gmi_org_id` | GMI Cloud | Optional organisation ID scoping requests to a GMI workspace |
+| `fal_key` | fal.ai | API key for fal.ai model inference |
+| `runware_key` | Runware | API key for Runware image generation |
+| `prodia_key` | Prodia | API key for Prodia image generation |
+| `openrouter_key` | OpenRouter | API key for OpenRouter LLM and multimodal routing |
+| `ai_gateway_api_key` | AI Gateway | API key for a self-hosted or cloud AI Gateway instance |
+
+Provider keys are **never required for mock runs**. The mock adapter ignores all key configuration and returns deterministic outputs regardless of whether any secrets are present.
+
+## Web Live Runs
+
+Web-initiated live runs require two things in addition to CLI live runs:
+
+1. **Wallet authentication** — the user must be signed in and have confirmed spend approval in the Zap web UI.
+2. **Supabase-stored provider keys** — keys are retrieved server-side from the authenticated user's secret store before the run job is enqueued. The client never handles raw API keys.
+
+See [Supabase Secrets Setup](/deployment/supabase-secrets) for instructions on storing and rotating provider keys.
+
+<Note>
+  Provider adapters return **run-safe metadata only**: step IDs, status strings, output URLs, observed cost, and error messages. They never return large media blobs to the agent context. Media assets are stored at the URL returned by the adapter and fetched lazily by the web UI or downstream steps.
+</Note>
+
+<Warning>
+  Never commit provider API keys to source control. Do not hardcode `gmi_api_key`, `fal_key`, or any other secret in `Zap.md`, prompt files, or `SKILL.md`. Store all keys in Supabase (for web runs) or environment variables (for CLI runs), and rotate them immediately if accidentally exposed. See [Supabase Secrets Setup](/deployment/supabase-secrets) for the recommended key storage pattern.
+</Warning>

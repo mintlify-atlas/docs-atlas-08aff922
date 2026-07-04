@@ -1,0 +1,168 @@
+---
+title: "Troubleshooting Common Zap Issues"
+sidebarTitle: "Troubleshooting"
+description: "Solutions for the most common Zap problems: Node version errors, recipe validation failures, live run rejections, Supabase secret issues, and HyperFrames fallbacks."
+---
+
+Most Zap issues fall into a small set of categories. Before diving into specific symptoms, run `zap doctor` — it checks your local environment against every prerequisite and is always the right first step.
+
+```bash
+npx @wzrdtech/zap@0.1.0 doctor --json
+```
+
+`doctor` verifies the following:
+
+| Check | What it tests |
+|-------|--------------|
+| `node` | Node ≥ 24 |
+| `package` | `package.json` present in the current directory |
+| `zap skills` | `agent/skills` directory present |
+| `convex` | `NEXT_PUBLIC_CONVEX_URL` configured |
+| `upstash` | Upstash REST env configured (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) |
+| `supabase` | Supabase public env configured (`NEXT_PUBLIC_SUPABASE_URL` + key) |
+| `hyperframes` | HyperFrames CLI available *(optional)* |
+
+---
+
+## Common Issues
+
+<Accordion title="Node fails with simdjson or native module error">
+
+**Cause:** Zap requires Node 24.x. Using an older version causes native module compilation failures, including `simdjson` binding errors.
+
+**Fix:** Install Node 24.x via your version manager (e.g. `nvm`, `fnm`, or `volta`) and confirm the version before re-running any Zap command.
+
+```bash
+node --version  # must be 24.x
+npx @wzrdtech/zap@0.1.0 doctor --json
+```
+
+If `doctor` reports `ok node: Node 24.x`, the runtime requirement is satisfied.
+
+</Accordion>
+
+<Accordion title="`zap validate` finds no recipes">
+
+**Cause:** You are either not running the command from a Zap project root, or no `Zap.md` recipe files exist yet.
+
+**Fix:** Run `zap validate` from a directory that contains `agent/skills/zap-*/Zap.md`. Alternatively, pass the path to a specific recipe file directly:
+
+```bash
+npx @wzrdtech/zap@0.1.0 validate agent/skills/zap-world-cup-entrance/Zap.md
+```
+
+If no skills exist yet, scaffold one first with `zap new <slug>`.
+
+</Accordion>
+
+<Accordion title="Live run refuses to start">
+
+A live run can be blocked for three distinct reasons. Work through each check in order:
+
+1. **Missing `--live` flag.** By design, all CLI runs default to mock mode. You must explicitly opt in:
+
+   ```bash
+   npx @wzrdtech/zap@0.1.0 run Zap.md --live --input PROMPT="test"
+   ```
+
+2. **Quote exceeds `budget.cap_usd`.** Before executing, Zap estimates total spend across all steps and rejects the run if the quote exceeds the recipe cap:
+
+   ```
+   Run quote $X.XX exceeds recipe cap $Y.YY.
+   ```
+
+   Lower the step count, shorten `duration_s` values, or raise `budget.cap_usd` in the recipe frontmatter.
+
+3. **Provider keys unavailable.** Live runs require valid provider credentials stored in Supabase secrets or present as environment variables. Confirm keys are saved at `/settings` before retrying.
+
+</Accordion>
+
+<Accordion title="Supabase secrets return empty or 401">
+
+**Cause:** The `/api/secrets` endpoint returns `configured: true` as soon as the Supabase public environment variables are present — but that only means the client is initialised, not that a user is authenticated. Listing, saving, deleting, or revealing secret values all require a valid Supabase bearer JWT.
+
+**Fix:** Connect your wallet at `/settings` to authenticate. Once authenticated, the JWT is attached to subsequent secret API calls automatically.
+
+**Note:** If you see `configured: true` in the doctor output but secret operations still fail, the issue is authentication — not configuration.
+
+</Accordion>
+
+<Accordion title="HyperFrames stitch step fails">
+
+**Cause:** A recipe step uses `stitch.engine: hyperframes`, but `npx hyperframes --version` fails or is not installed in the current environment.
+
+**Behavior:** Zap does not hard-fail the entire run. Instead, it falls back to the local stitch path and records the fallback error on the affected step in the run result.
+
+**Fix options:**
+
+- If HTML composition via HyperFrames is required, install the HyperFrames CLI and verify it:
+
+  ```bash
+  npx hyperframes --version
+  npx @wzrdtech/zap@0.1.0 doctor
+  ```
+
+- If HyperFrames is not needed, switch the recipe to `engine: auto` or `engine: local` in the `stitch` step configuration to avoid the check entirely.
+
+</Accordion>
+
+<Accordion title="Recipe validation fails with undeclared input error">
+
+**Cause:** A prompt file referenced by a step uses a `{VARIABLE}` placeholder that is not declared in the `inputs` map of the `Zap.md` frontmatter. Validation is strict — every `{UPPER_CASE}` token in a prompt must have a corresponding `inputs` entry.
+
+**Example error:**
+
+```
+Step initial_gen references undeclared input {SELFIE}.
+```
+
+**Fix:** Add the missing variable to the `inputs` map in your recipe frontmatter:
+
+```yaml
+inputs:
+  SELFIE:
+    label: "Selfie image"
+    type: image
+    required: true
+```
+
+</Accordion>
+
+<Accordion title="Mock run output URL is mock:// not a real URL">
+
+This is **expected behavior** for mock runs. When `--live` is not passed, Zap returns a deterministic placeholder URL of the form:
+
+```
+mock://zap/<slug>/<runId>/Zap.mp4
+```
+
+This placeholder is written to `.zap/runs/<runId>/result.json` and is intentional — no provider is called and no real media is generated.
+
+Real output URLs are only returned from live provider runs (`zap run Zap.md --live`).
+
+</Accordion>
+
+<Accordion title="`zap lint` warns about live provider default">
+
+**Cause:** `zap lint` checks whether `defaults.provider` in the recipe frontmatter is set to `mock`. If it is set to any live provider (e.g. `gmi`, `fal`), lint emits a warning:
+
+```
+defaults.provider is live; mock is safer for published templates.
+```
+
+**Fix for published templates:** Set the provider default to `mock` so that contributors do not accidentally incur charges when testing:
+
+```yaml
+defaults:
+  provider: mock
+```
+
+**To silence the warning without changing the recipe:** Set the `ZAP_LINT_ALLOW_LIVE_DEFAULT=1` environment variable before running lint.
+
+</Accordion>
+
+---
+
+<Note>
+If `zap doctor` passes all checks but issues persist, run `npm run typecheck` and `npm test` from the project root. These catch source-level type errors and unit test failures that the environment checks do not cover.
+</Note>

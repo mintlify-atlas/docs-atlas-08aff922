@@ -1,0 +1,229 @@
+---
+title: "Pipeline Steps: Building Generative Video Workflows"
+sidebarTitle: "Steps"
+description: "Zap pipelines are sequences of typed steps. Learn all 11 step kinds, how to wire inputs between steps, and when to use HyperFrames stitching."
+---
+
+Zap pipelines follow a creative grammar — each recipe is a directed, ordered sequence of typed steps that carry media from first frame to final artifact. Steps are not arbitrary scripts; they correspond to real provider capabilities (image generation, video animation, upscaling, audio synthesis, and composition). Because every step has an explicit `kind`, the Zap planner can quote costs before any provider call is made and route each step to the right adapter automatically.
+
+## Creative Grammar
+
+The canonical pattern for a generative video recipe is:
+
+```text
+InitialFrame -> InitialGen -> InitialGenReViz? -> ExtendGen x N -> Zap.mp4
+```
+
+1. **InitialFrame** — generate or supply a reference image that anchors the visual identity.
+2. **InitialGen** — animate the frame into a base video clip.
+3. **InitialGenReViz** *(optional)* — revise or upscale the initial clip before extending.
+4. **ExtendGen × N** — chain one or more `video.extend` steps to grow duration.
+5. **Zap.mp4** — a `stitch` step assembles all clips into the final artifact.
+
+## Step Kinds
+
+Zap supports 11 step kinds, covering the full media production stack:
+
+| Kind | Description |
+|---|---|
+| `image.gen` | Create a first frame, storyboard, character sheet, or any reference image from a text prompt or existing inputs. |
+| `image.edit` | Transform an input image while preserving subject identity — useful for style transfer or inpainting. |
+| `video.gen` | Animate image or prompt inputs into a video clip. |
+| `video.extend` | Continue a clip forward from its last frame. Supports `repeat` to chain multiple extensions. |
+| `video.edit` | Revise an existing clip using a prompt or composition layer. |
+| `video.upscale` | Produce a higher-resolution version of a clip. |
+| `audio.tts` | Generate voiceover narration from a text prompt. |
+| `audio.music` | Generate a music track from a style or lyric prompt. |
+| `audio.sfx` | Generate sound effects to layer into the video. |
+| `keyframes` | Extract, score, or prepare frames for the next step in the pipeline. |
+| `stitch` | Combine all upstream assets into the final Zap artifact (video + optional audio). |
+
+## Step Fields
+
+<ParamField path="id" type="string" required>
+  Unique identifier for this step within the recipe. Referenced by downstream steps in their `inputs` list. Must be at least one character. Example: `initial_frame`.
+</ParamField>
+
+<ParamField path="kind" type="string" required>
+  The step type. Must be one of the 11 values listed above.
+</ParamField>
+
+<ParamField path="provider" type="string">
+  The provider adapter to use for this step. Overrides `defaults.provider`. Common values: `mock`, `gmi`, `fal`. See [Providers](/concepts/providers).
+</ParamField>
+
+<ParamField path="model" type="string">
+  The specific model to invoke on the provider. Example: `fal-ai/flux/dev`, `seedance-2-0-260128`. The planner uses this value to look up per-request or per-second rates for cost estimation.
+</ParamField>
+
+<ParamField path="prompt" type="string">
+  Path to a Markdown prompt template relative to the recipe root. Example: `prompts/initial-gen.md`. The template may contain `{INPUT_NAME}` placeholders that are resolved at run time from the supplied inputs.
+</ParamField>
+
+<ParamField path="inputs" type="array">
+  List of upstream step IDs whose outputs this step consumes. The Zap runtime resolves these references and passes the media assets to the provider adapter. Example: `[initial_frame]`.
+</ParamField>
+
+<ParamField path="duration_s" type="number">
+  Target clip duration in seconds. Used by video generation and extension steps. Also used by the cost planner: `cost = rate_per_second × duration_s`.
+</ParamField>
+
+<ParamField path="candidates" type="integer">
+  Number of candidate outputs to generate. Range: 1–16. When greater than 1, the best candidate is selected (optionally via RLHF scoring) before passing to the next step.
+</ParamField>
+
+<ParamField path="repeat" type="object">
+  Controls how many times a `video.extend` step is expanded at plan time. Contains three sub-fields:
+
+  - **`min`** *(integer, ≥ 0)* — minimum number of extensions, even if `extendCount` is lower.
+  - **`max`** *(integer, 0–64)* — maximum number of extensions allowed. Defaults to 64.
+  - **`default`** *(integer, ≥ 0)* — the default extension count when not specified by the caller.
+
+  At plan time, `expandRepeatSteps` expands the step into `count = clamp(extendCount, min, max)` concrete steps, each with a suffixed ID (`extend_gen_1`, `extend_gen_2`, …).
+</ParamField>
+
+<ParamField path="stitch" type="object">
+  Stitching configuration for `stitch`-kind steps. See [Stitch Configuration](#stitch-configuration) below.
+</ParamField>
+
+<ParamField path="tier" type="string">
+  Processing tier. One of `"draft"` or `"final"`. Signals to provider adapters whether to use faster, lower-quality rendering or full-quality rendering.
+</ParamField>
+
+<ParamField path="rlhf" type="boolean | string">
+  Enables reinforcement learning from human feedback scoring for candidate selection. Set to `true`, `false`, or `"optional"`.
+</ParamField>
+
+<ParamField path="shared" type="boolean">
+  When `true`, the output of this step is shareable across recipe instances (e.g. a common reference frame reused by multiple runs).
+</ParamField>
+
+## Wiring Steps with `inputs`
+
+The `inputs` array on each step names the upstream step IDs whose outputs it depends on. The Zap runtime resolves these at execution time and passes the media assets forward:
+
+```yaml
+steps:
+  - id: initial_frame
+    kind: image.gen
+    provider: gmi
+    model: fal-ai/flux/dev
+    prompt: prompts/initial-frame.md
+
+  - id: initial_gen
+    kind: video.gen
+    provider: gmi
+    model: seedance-2-0-260128
+    inputs: [initial_frame]        # consumes the image output of initial_frame
+    duration_s: 5
+    prompt: prompts/initial-gen.md
+
+  - id: extend_gen
+    kind: video.extend
+    provider: gmi
+    model: seedance-2-0-260128
+    inputs: [initial_gen]          # extends the clip produced by initial_gen
+    duration_s: 5
+    repeat:
+      min: 1
+      max: 4
+      default: 2
+
+  - id: stitch
+    kind: stitch
+    inputs: [initial_gen, extend_gen]
+```
+
+## Stitch Configuration
+
+The `stitch` field on a `stitch`-kind step controls how the final video is assembled:
+
+<ParamField path="stitch.engine" type="string" default="auto">
+  The composition engine. One of:
+
+  - `auto` — Zap selects the best available engine automatically.
+  - `local` — ffmpeg-based local stitching; no external service required.
+  - `hyperframes` — HyperFrames cloud composition engine; required for HTML-layer compositions.
+</ParamField>
+
+<ParamField path="stitch.format" type="string" default="mp4">
+  Output container format. `"mp4"` or `"webm"`.
+</ParamField>
+
+<ParamField path="stitch.quality" type="string" default="standard">
+  Render quality preset. One of `"draft"`, `"standard"`, or `"high"`.
+</ParamField>
+
+<ParamField path="stitch.fps" type="integer">
+  Output frame rate. Range: 1–120. Omit to use the source clip's native frame rate.
+</ParamField>
+
+<Note>
+  **HyperFrames** is only needed when HTML-layer composition is required — for example, rendering lower-thirds, animated overlays, or browser-based visual effects on top of video. Using `engine: hyperframes` requires a `DESIGN.md` file in the recipe directory describing the HTML composition layers. If the HyperFrames CLI is unavailable at run time, Zap falls back to the local stitch path and records the fallback on the run step — the recipe will still complete.
+</Note>
+
+## Full Multi-Step Pipeline Example
+
+The following recipe generates a sports entrance video from a selfie:
+
+```yaml
+---
+zap: world-cup-entrance
+version: 1
+description: Transform a selfie into a dramatic stadium entrance video.
+budget:
+  estimate_usd: 1.40
+  cap_usd: 5
+defaults:
+  provider: gmi
+  aspect: "9:16"
+inputs:
+  SELFIE:
+    type: image
+    label: Your Photo
+    hint: Upload a clear front-facing photo.
+    required: true
+  PLAYER_NAME:
+    type: string
+    label: Player Name
+    required: true
+steps:
+  - id: initial_frame
+    kind: image.gen
+    model: fal-ai/flux/dev
+    prompt: prompts/initial-frame.md
+
+  - id: initial_gen
+    kind: video.gen
+    model: seedance-2-0-260128
+    inputs: [initial_frame]
+    duration_s: 5
+    prompt: prompts/initial-gen.md
+
+  - id: extend_gen
+    kind: video.extend
+    model: seedance-2-0-260128
+    inputs: [initial_gen]
+    duration_s: 5
+    repeat:
+      min: 1
+      max: 4
+      default: 2
+
+  - id: upscale
+    kind: video.upscale
+    model: seedance-2-0-260128-upscale
+    inputs: [extend_gen]
+    tier: final
+
+  - id: stitch
+    kind: stitch
+    inputs: [upscale]
+    stitch:
+      engine: auto
+      format: mp4
+      quality: high
+      fps: 30
+output: Zap.mp4
+---
+```

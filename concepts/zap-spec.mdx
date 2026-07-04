@@ -1,0 +1,169 @@
+---
+title: "The Zap.md Recipe Format Explained"
+sidebarTitle: "Zap Spec"
+description: "Zap.md combines YAML frontmatter with prose context in a single Markdown file. Learn the required fields, input types, step references, and validation rules."
+---
+
+`Zap.md` is the single source of truth for a one-shot content recipe. It lives inside an Eve skill directory and combines YAML frontmatter — which the Zap runtime parses and validates — with Markdown prose that gives the agent authoring context about intent, creative direction, and usage notes. Everything the CLI, web runtime, and provider adapters need to plan and execute a pipeline is derived from this one file.
+
+## Directory Layout
+
+Every Zap recipe lives inside a skill folder with a predictable structure:
+
+```text
+agent/skills/zap-<slug>/
+  SKILL.md          # Eve skill descriptor — describes the recipe to the agent
+  Zap.md            # Recipe definition (frontmatter + prose context)
+  prompts/*.md      # Prompt templates referenced by step fields
+```
+
+The `prompts/` directory holds Markdown prompt templates. Each template can reference `{INPUT_NAME}` variables that must be declared in the `inputs` map of the frontmatter.
+
+## Minimum Valid Frontmatter
+
+The smallest Zap.md that passes validation looks like this:
+
+```yaml
+---
+zap: launch-trailer
+version: 1
+description: A short creator video.
+budget:
+  estimate_usd: 0
+  cap_usd: 5
+defaults:
+  provider: mock
+  aspect: "9:16"
+inputs:
+  PROMPT:
+    type: textarea
+    label: Prompt
+    required: true
+steps:
+  - id: initial_frame
+    kind: image.gen
+    provider: mock
+    model: mock-image
+    prompt: prompts/initial-frame.md
+  - id: initial_gen
+    kind: video.gen
+    provider: mock
+    model: mock-video
+    inputs: [initial_frame]
+    duration_s: 15
+    prompt: prompts/initial-gen.md
+  - id: stitch
+    kind: stitch
+    inputs: [initial_gen]
+output: Zap.mp4
+---
+```
+
+## Top-Level Fields
+
+<ParamField path="zap" type="string" required>
+  Unique recipe slug — used as the run identifier in CLI commands and the web dashboard. Must be at least one character. Example: `world-cup-entrance`.
+</ParamField>
+
+<ParamField path="version" type="integer" required>
+  Schema version. Currently `1`. Zap will reject recipes with an unrecognised version number before validation begins.
+</ParamField>
+
+<ParamField path="description" type="string" required>
+  Human-readable description of what the recipe produces. Shown in the web UI and surfaced to the Eve agent as task context.
+</ParamField>
+
+<ParamField path="budget" type="object" required>
+  Hard cost constraints for the recipe. Contains two sub-fields:
+
+  - **`estimate_usd`** *(number, ≥ 0)* — the planner's pre-run cost estimate. Must not exceed `cap_usd`.
+  - **`cap_usd`** *(number, > 0)* — the hard spending ceiling. Live runs are rejected before provider submission if the quote exceeds this value.
+
+  ```yaml
+  budget:
+    estimate_usd: 1.25
+    cap_usd: 5
+  ```
+</ParamField>
+
+<ParamField path="defaults" type="object">
+  Fallback values applied to any step that does not declare its own `provider` or `aspect`.
+
+  - **`provider`** *(string, default: `"gmi"`)* — the provider adapter used when a step omits `provider`.
+  - **`aspect`** *(string, optional)* — default aspect ratio forwarded to image and video models (e.g. `"9:16"`, `"16:9"`, `"1:1"`).
+</ParamField>
+
+<ParamField path="inputs" type="object">
+  Map of uppercased variable names to input specs. These are the values a creator supplies when running the recipe — either via `--input KEY=value` on the CLI or through the web form. Each key becomes a `{VARIABLE}` available in prompt templates.
+
+  See [Input Schema Fields](#input-schema-fields) below for the shape of each value.
+</ParamField>
+
+<ParamField path="steps" type="array" required>
+  Ordered list of pipeline steps. Must contain at least one step. Steps are executed in declaration order; use the `inputs` field on each step to express dependencies on earlier steps' outputs. See the [Steps](/concepts/steps) reference for all supported `kind` values and step-level fields.
+</ParamField>
+
+<ParamField path="output" type="string" default="Zap.mp4">
+  The filename of the final artifact produced by the `stitch` step. Defaults to `Zap.mp4`. Override when producing WebM or a custom output name.
+</ParamField>
+
+## Input Schema Fields
+
+Each entry in the `inputs` map is an object with the following fields:
+
+<ParamField path="type" type="string" required>
+  The UI widget and value type for this input. One of:
+
+  | Value | Description |
+  |---|---|
+  | `string` | Single-line text field |
+  | `textarea` | Multi-line text area |
+  | `image` | Image file upload |
+  | `video` | Video file upload |
+  | `select` | Dropdown — requires `options` |
+  | `number` | Numeric input |
+</ParamField>
+
+<ParamField path="label" type="string">
+  Human-readable label shown above the input in the web form. If omitted, the variable name is used.
+</ParamField>
+
+<ParamField path="hint" type="string">
+  Short helper text shown beneath the input field.
+</ParamField>
+
+<ParamField path="required" type="boolean" default="false">
+  When `true`, the Zap runtime will throw a `Missing required input` error before the pipeline starts if this value is not supplied.
+</ParamField>
+
+<ParamField path="options" type="array">
+  Required when `type` is `select`. An array of string values the creator can choose from. Example: `["cinematic", "anime", "documentary"]`.
+</ParamField>
+
+## Validation Rules
+
+The Zap runtime enforces three rules every time a recipe is parsed or run:
+
+1. **Unique step IDs** — every `steps[].id` must be unique within the recipe. Duplicate IDs cause a `Duplicate step id` error at parse time.
+
+2. **Declared variables** — every `{VARIABLE}` placeholder referenced in a prompt file must have a matching key in the `inputs` map. The validator checks all prompt paths listed in `step.prompt` fields.
+
+3. **Budget check** — `budget.estimate_usd` must not exceed `budget.cap_usd`. This is enforced both at parse time and again at plan time before any provider call is made.
+
+<Warning>
+  Every `{VARIABLE}` in a prompt file must be declared in `inputs`. If a prompt template references `{SELFIE}` or `{STYLE}` and those keys are absent from the `inputs` map, validation will throw `Step <id> references undeclared input {VARIABLE}` and the run will be blocked.
+</Warning>
+
+## Validate and Lint Commands
+
+Run these commands after every recipe edit to catch errors before a live run:
+
+```bash
+# Validate schema, step IDs, and declared variables
+npx @wzrdtech/zap@0.1.0 validate
+
+# Run the linter (style, completeness, and budget checks)
+npx @wzrdtech/zap@0.1.0 lint
+```
+
+Both commands exit with a non-zero code on failure and print a structured error report to stdout, making them safe to run in CI.

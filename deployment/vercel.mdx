@@ -1,0 +1,152 @@
+---
+title: "Deploy Zap to Vercel: Production Setup Guide"
+sidebarTitle: "Vercel"
+description: "Deploy the Zap Next.js app to Vercel with Node 24.x, configure environment variables, set up the poll drain endpoint, and run smoke tests."
+---
+
+Zap's production target is Vercel with **Node 24.x**, served at `zap.wzrd.tech`. The Vercel project is named `zap` and connects to the `wzrdstudio` Supabase project. All environment variables documented here belong in Vercel's project settings; user-level provider keys belong in Supabase (see the [Supabase Secrets guide](/deployment/supabase-secrets)).
+
+## Prerequisites
+
+Before deploying, confirm you have:
+
+- **Node 24.x** installed locally (matches the Vercel runtime)
+- A provisioned **Convex** project with `NEXT_PUBLIC_CONVEX_URL` and `CONVEX_URL`
+- A provisioned **Supabase** project (`wzrdstudio`) with the BYOK migration applied
+- An **Upstash Redis** instance with REST URL and token
+- A **Vercel Blob** store with a `BLOB_READ_WRITE_TOKEN`
+- The Vercel CLI installed (`npm i -g vercel`) and authenticated
+
+---
+
+## Deploy Sequence
+
+<Steps>
+  <Step title="Run pre-deploy checks">
+    Run the full test, type-check, and build suite locally before pushing to production.
+
+    ```bash
+    npm test && npm run typecheck && npm run build
+    ```
+
+    All three commands must exit `0`. Fix any failures before proceeding.
+  </Step>
+
+  <Step title="Deploy to Vercel">
+    Deploy the production build with the Vercel CLI.
+
+    ```bash
+    vercel deploy --prod --yes
+    ```
+
+    The CLI will pick up your linked project and push the build to Vercel's edge network.
+  </Step>
+
+  <Step title="Attach and verify the custom domain">
+    In the Vercel project dashboard, add `zap.wzrd.tech` as a custom domain and verify DNS propagation. The domain must resolve before live traffic can be routed correctly.
+
+    Confirm the domain is active:
+
+    ```bash
+    curl -I https://zap.wzrd.tech/
+    ```
+
+    Expect a `200 OK` (or a redirect) with Vercel's response headers.
+  </Step>
+
+  <Step title="Apply Supabase migrations">
+    Run the BYOK migration against the `wzrdstudio` Supabase project **before** enabling any live runs that depend on creator-supplied provider keys.
+
+    ```bash
+    supabase db push --project-ref <your-project-ref>
+    ```
+
+    See the [Supabase Secrets guide](/deployment/supabase-secrets) for the full migration details and required edge function setup.
+  </Step>
+
+  <Step title="Run smoke tests">
+    Verify the deployment end-to-end:
+
+    ```bash
+    # Health check
+    curl -I https://zap.wzrd.tech/
+
+    # Confirm API routes are reachable
+    curl -s https://zap.wzrd.tech/api/health
+
+    # Confirm the poll drain endpoint is accessible (should 401 without secret)
+    curl -I https://zap.wzrd.tech/api/providers/poll/drain
+    ```
+
+    If Basic Auth is enabled, include `-u "$ZAP_BASIC_USER:$ZAP_BASIC_PASSWORD"` in your `curl` calls.
+  </Step>
+</Steps>
+
+---
+
+## Environment Variables
+
+Set all of the following in **Vercel → Project Settings → Environment Variables** for the `Production` (and optionally `Preview`) environment.
+
+<Note>
+  User-level provider keys (`gmi_api_key`, `fal_key`, etc.) belong in Supabase via the BYOK secret store — not in Vercel environment variables. The variables below are app-level credentials only.
+</Note>
+
+### Supabase
+
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL, e.g. `https://<ref>.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable (anon) key for client-side auth |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Legacy alias for the publishable key; use one or the other |
+| `ZAP_SECRET_REVEAL_TOKEN` | Long random value shared between Vercel and the `zap-user-secrets` edge function; authorises server-side plaintext key reveal |
+| `ZAP_WALLET_PROOF_FUNCTION` | Name of the Supabase edge function that handles wallet proof (default: `zap-wallet-proof`) |
+
+### Convex
+
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_CONVEX_URL` | Public Convex deployment URL used by the browser client |
+| `CONVEX_URL` | Server-side Convex URL used by Next.js API routes |
+
+### Upstash Redis
+
+| Variable | Description |
+|---|---|
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST endpoint URL |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
+
+### Vercel Blob
+
+| Variable | Description |
+|---|---|
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob store token for asset upload and retrieval |
+
+### App-Level Provider Credentials
+
+These are the Zap server's own provider credentials, used when `ZAP_PROVIDER` is set to a real provider (not `mock`).
+
+| Variable | Description |
+|---|---|
+| `GMI_API_KEY` | GMI API key for the Zap server account |
+| `GMI_ORG_ID` | GMI organisation ID for the Zap server account |
+| `FAL_KEY` | Fal.ai API key for the Zap server account |
+| `ZAP_PROVIDER` | Active provider mode: `mock`, `gmi`, or `fal` |
+
+<Warning>
+  `ZAP_PROVIDER=mock` is the safe default and will not call any external provider. Only change this to `gmi` or `fal` after confirming the corresponding API keys are correctly configured and tested. Setting a real provider without valid credentials will cause all live runs to fail.
+</Warning>
+
+### Poll Drain
+
+| Variable | Description |
+|---|---|
+| `ZAP_POLL_DRAIN_URL` | Full URL of the deployed poll drain endpoint, e.g. `https://zap.wzrd.tech/api/providers/poll/drain` |
+| `ZAP_POLL_DRAIN_SECRET` | Shared secret used to authenticate Upstash → Vercel drain requests; set this in both Vercel and Convex |
+
+### Legacy Basic Auth
+
+| Variable | Description |
+|---|---|
+| `ZAP_BASIC_USER` | HTTP Basic Auth username (default: `zap`) |
+| `ZAP_BASIC_PASSWORD` | HTTP Basic Auth password — **change from the default `change-me` before going live** |

@@ -1,0 +1,196 @@
+---
+title: "Convex: Run State and Database Setup"
+sidebarTitle: "Convex"
+description: "Convex is Zap's source of truth for live run state. Learn the table schema, runtime flow, and how to configure and regenerate the Convex client."
+---
+
+Convex provides real-time run state, ordered step tracking, asset storage, and execution logs for all live Zap runs. Every stage of a pipeline — from the initial `POST /api/zaps/run` through provider polling to final asset delivery — is recorded in Convex and updated idempotently. Upstash Redis works alongside Convex to manage polling queues and enforce idempotency across retries.
+
+<Note>
+  Mock CLI runs (`ZAP_PROVIDER=mock`) do not require a Convex deployment. Only web live runs — where a real provider job is submitted and polled — need the full Convex + Upstash stack.
+</Note>
+
+---
+
+## Table Schema
+
+The Convex schema (`convex/schema.ts`) defines six tables:
+
+### `zaps`
+
+Installed and discoverable recipe metadata. Each record represents a Zap definition that has been published or saved as a draft.
+
+| Field | Type | Description |
+|---|---|---|
+| `slug` | `string` | URL-safe unique identifier for the Zap |
+| `source` | `string` | Raw `Zap.md` source content |
+| `version` | `number` | Monotonically increasing version counter |
+| `status` | `"draft" \| "published"` | Visibility state |
+| `estimateUsd` | `number` | Estimated cost in USD for a single run |
+| `tags` | `string[]` | Searchable topic tags |
+| `authorId` | `string` *(optional)* | Wallet address or user ID of the creator |
+
+**Indexes:** `by_slug`, `by_status`
+
+### `runs`
+
+Run status, creator input summary, budget tracking, and provider mode for each execution.
+
+| Field | Type | Description |
+|---|---|---|
+| `runId` | `string` | Unique run identifier |
+| `zapSlug` | `string` | Slug of the Zap being executed |
+| `zapVersion` | `number` | Version of the Zap at run time |
+| `status` | `"queued" \| "running" \| "waiting" \| "done" \| "failed"` | Current run lifecycle state |
+| `inputs` | `any` | Creator-supplied input parameters |
+| `costUsd` | `number` | Accumulated cost in USD |
+| `startedAt` | `number` | Unix timestamp (ms) when the run started |
+| `finishedAt` | `number` *(optional)* | Unix timestamp (ms) when the run completed |
+| `stage` | `string` *(optional)* | Human-readable current pipeline stage label |
+| `userId` | `string` *(optional)* | Authenticated user ID |
+| `sessionId` | `string` *(optional)* | Browser or API session identifier |
+| `zapUrl` | `string` *(optional)* | Public URL for the run's output |
+| `error` | `string` *(optional)* | Error message if the run failed |
+
+**Indexes:** `by_runId`, `by_status`, `by_zap`
+
+### `steps`
+
+Ordered pipeline step state for each run. One record per step per run.
+
+| Field | Type | Description |
+|---|---|---|
+| `runId` | `string` | Parent run identifier |
+| `stepId` | `string` | Unique step identifier within the run |
+| `kind` | `string` | Step type (e.g. `image_gen`, `video_stitch`) |
+| `status` | `"queued" \| "running" \| "done" \| "failed" \| "skipped"` | Step lifecycle state |
+| `progress` | `number` | Completion progress from `0` to `1` |
+| `priceQuoteUsd` | `number` | Estimated cost for this step |
+| `actualUsd` | `number` *(optional)* | Actual cost charged by the provider |
+| `provider` | `string` *(optional)* | Provider used for this step (e.g. `gmi`, `fal`) |
+| `model` | `string` *(optional)* | Model or pipeline variant used |
+| `providerRequestId` | `string` *(optional)* | Provider's own job/request ID for polling |
+| `idemKey` | `string` *(optional)* | Idempotency key for Upstash deduplication |
+| `error` | `string` *(optional)* | Error message if this step failed |
+
+**Indexes:** `by_run`, `by_step`, `by_status`
+
+### `assets`
+
+Generated outputs produced during a run: images, video clips, audio files, and stitched results.
+
+| Field | Type | Description |
+|---|---|---|
+| `runId` | `string` | Parent run identifier |
+| `stepId` | `string` | Step that produced this asset |
+| `kind` | `"png" \| "mp4" \| "wav" \| "json"` | Asset media type |
+| `url` | `string` | Public URL for the asset |
+| `storageKey` | `string` *(optional)* | Vercel Blob storage key |
+| `parents` | `string[]` | Asset IDs this output was derived from |
+| `width` | `number` *(optional)* | Width in pixels (images/video) |
+| `height` | `number` *(optional)* | Height in pixels (images/video) |
+| `durationS` | `number` *(optional)* | Duration in seconds (audio/video) |
+
+**Indexes:** `by_run`, `by_step`
+
+### `feedback`
+
+Creator ratings, RLHF votes, and VLM judge scores used as eval signals.
+
+| Field | Type | Description |
+|---|---|---|
+| `runId` | `string` | Run this feedback applies to |
+| `kind` | `"rlhf_vote" \| "judge_score"` | Feedback category |
+| `rater` | `"human" \| "vlm"` | Source of the rating |
+| `scores` | `any` | Structured score payload |
+| `stepId` | `string` *(optional)* | Step-level feedback target |
+| `comment` | `string` *(optional)* | Free-text annotation |
+
+**Indexes:** `by_run`, `by_step`
+
+### `cronLogs`
+
+Poller and drain execution logs. Written after each scheduled or triggered drain cycle.
+
+| Field | Type | Description |
+|---|---|---|
+| `jobName` | `string` | Identifier for the cron or drain job |
+| `status` | `"success" \| "partial" \| "failed"` | Outcome of the run cycle |
+| `startTime` | `number` | Unix timestamp (ms) when the job started |
+| `endTime` | `number` | Unix timestamp (ms) when the job finished |
+| `duration` | `number` | Elapsed time in milliseconds |
+| `processedCount` | `number` | Number of poll jobs processed |
+| `errorCount` | `number` | Number of errors encountered |
+| `error` | `string` *(optional)* | Last error message, if any |
+
+**Indexes:** `by_job`, `by_startTime`, `by_status`
+
+---
+
+## Runtime Flow
+
+Each live run follows this sequence through the stack:
+
+```text
+POST /api/zaps/run
+  -> validate Zap.md
+  -> create run + steps        (Convex)
+  -> submit provider job       (GMI / Fal / ...)
+  -> enqueue Upstash poll job  (Upstash Redis)
+  -> drain endpoint polls provider
+  -> update Convex idempotently
+```
+
+1. The API route validates the `Zap.md` recipe and resolves creator secrets from Supabase
+2. A `runs` record and one `steps` record per pipeline stage are written to Convex
+3. The provider job is submitted; the returned `providerRequestId` is stored on the step
+4. An Upstash job is enqueued with the step's idempotency key (`idemKey`)
+5. The drain endpoint (`/api/providers/poll/drain`) is called by Upstash on a schedule, polling the provider for status
+6. Results are written back to `steps` and `assets` in Convex; the `runs` record is updated to reflect the final status
+
+---
+
+## Configuration
+
+### Required Environment Variables
+
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_CONVEX_URL` | Public Convex deployment URL — used by the browser client for real-time subscriptions |
+| `CONVEX_URL` | Server-side Convex URL — used by Next.js API routes for mutations and queries |
+
+### Upstash Integration
+
+Convex and Upstash Redis work together to provide idempotent polling queues. Configure Upstash in both your Vercel environment and any Convex actions that enqueue jobs:
+
+| Variable | Description |
+|---|---|
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST endpoint URL |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST authentication token |
+
+### Poll Drain Endpoint
+
+The drain endpoint is the bridge between Upstash and Convex. Set these in Vercel:
+
+| Variable | Description |
+|---|---|
+| `ZAP_POLL_DRAIN_URL` | Full URL of the drain endpoint, e.g. `https://zap.wzrd.tech/api/providers/poll/drain` |
+| `ZAP_POLL_DRAIN_SECRET` | Shared secret added to drain requests so the endpoint can reject unauthorised callers |
+
+Set `ZAP_POLL_DRAIN_SECRET` in both Vercel (where the endpoint runs) and in the Convex environment (or Upstash job config) that enqueues drain calls.
+
+---
+
+## Local Development Setup
+
+After cloning and installing dependencies, regenerate the Convex client types and confirm your deployment target:
+
+```bash
+# Regenerate Convex TypeScript client from the live schema
+npm run convex:codegen
+
+# Inspect the current Convex deployment info
+npm run eve:info
+```
+
+`convex:codegen` must be re-run whenever `convex/schema.ts` changes to keep the typed client in sync with the deployed schema.

@@ -1,72 +1,102 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "Zap",
+  "theme": "luma",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#5c80aa",
+    "light": "#1f2a3b",
+    "dark": "#5c80aa"
   },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
+  "favicon": "https://icons.duckduckgo.com/ip3/zap-sepia.vercel.app.ico",
   "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "light": "https://media.brand.dev/86f129d9-0957-49c1-8c00-f63ea0d1e19c.png",
+    "dark": "https://media.brand.dev/86f129d9-0957-49c1-8c00-f63ea0d1e19c.png"
   },
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/gratitude5dee/Zap"
     }
-  },
-  "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/gratitude5dee/Zap"
     }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "quickstart-agents"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/zap-spec",
+              "concepts/steps",
+              "concepts/budget",
+              "concepts/providers"
+            ]
+          },
+          {
+            "group": "Web App",
+            "pages": [
+              "webapp/overview",
+              "webapp/studio",
+              "webapp/auth-secrets"
+            ]
+          },
+          {
+            "group": "Agent Framework",
+            "pages": [
+              "agent/overview",
+              "agent/skills",
+              "agent/eve"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/vercel",
+              "deployment/supabase-secrets",
+              "deployment/convex"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "CLI",
+            "pages": [
+              "reference/cli",
+              "reference/cli-flags"
+            ]
+          },
+          {
+            "group": "Schema",
+            "pages": [
+              "reference/schema",
+              "reference/step-kinds",
+              "reference/runtime"
+            ]
+          },
+          {
+            "group": "Support",
+            "pages": [
+              "reference/troubleshooting"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

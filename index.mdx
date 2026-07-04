@@ -1,20 +1,62 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "Zap: One-Click Generative Video Recipes"
+sidebarTitle: "Home"
+description: "Zap is an agent-first framework and CLI for building, validating, and running AI-powered generative video pipelines. Go from idea to finished media artifact in one command."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+Zap lets you define reusable generative video recipes in a single `Zap.md` file, then run them with zero spend in mock mode or against real AI providers with a single flag. The `@wzrdtech/zap` CLI scaffolds projects, validates recipes, and orchestrates multi-step pipelines across GMI Cloud, fal, and bring-your-own-key providers — all enforced by per-recipe budget caps.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Scaffold a project, write your first recipe, and run a mock pipeline in under five minutes.
+  </Card>
+  <Card title="Zap Spec" icon="file-code" href="/concepts/zap-spec">
+    Understand the Zap.md recipe format — inputs, steps, budget, and output declaration.
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/reference/cli">
+    Every command from `zap init` to `zap doctor`, with flags and real output examples.
+  </Card>
+  <Card title="Providers" icon="cloud" href="/concepts/providers">
+    Route pipelines through GMI Cloud, fal, or your own keys stored securely in Supabase.
+  </Card>
+</CardGroup>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## How It Works
+
+<Steps>
+  <Step title="Scaffold a project">
+    Run `npx @wzrdtech/zap@0.1.0 init my-app` to create a Zap project with the correct directory structure, package scripts, and a sample recipe.
+  </Step>
+  <Step title="Author a recipe">
+    Use `zap new <slug>` to scaffold `agent/skills/zap-<slug>/Zap.md` with YAML frontmatter defining inputs, pipeline steps, budget cap, and output format.
+  </Step>
+  <Step title="Validate and lint">
+    Run `zap validate` to check frontmatter correctness and variable references. Run `zap lint` to catch policy warnings like live provider defaults.
+  </Step>
+  <Step title="Run mock or live">
+    Execute `zap run <Zap.md>` for a zero-cost mock run, or add `--live` to submit real provider jobs — budget is enforced automatically before any spend.
+  </Step>
+</Steps>
+
+## Key Features
+
+<CardGroup cols={3}>
+  <Card title="Recipe Files" icon="scroll">
+    `Zap.md` combines YAML pipeline metadata with human-readable context in a single Markdown file that agents and creators both understand.
+  </Card>
+  <Card title="Mock by Default" icon="flask">
+    Every CLI run defaults to mock mode — deterministic zero-cost outputs for testing. Flip to live only when you're ready to spend.
+  </Card>
+  <Card title="Budget Enforcement" icon="shield-check">
+    Per-recipe `cap_usd` is enforced at the CLI and web runtime before any provider job is submitted.
+  </Card>
+  <Card title="Multi-Provider" icon="shuffle">
+    Route individual steps to GMI Cloud or fal, or bring your own keys for Runware, Prodia, OpenRouter, and more.
+  </Card>
+  <Card title="Eve Agent Runtime" icon="robot">
+    Skill directories are portable agent capabilities. Coding agents can read, edit, validate, and run recipes through the same CLI.
+  </Card>
+  <Card title="Web Studio" icon="display">
+    The creator studio at `/studio` gives a chat-style interface to run and iterate on Zaps without touching the command line.
+  </Card>
+</CardGroup>

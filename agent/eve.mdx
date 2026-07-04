@@ -1,0 +1,120 @@
+---
+title: "Eve Runtime: Agent Configuration and Build"
+sidebarTitle: "Eve"
+description: "Zap is built on the Eve agent framework. Learn the Eve project layout, how to read agent configuration, useful eve commands, and how channels work."
+---
+
+Zap mounts a Next.js app with `withEve` — Eve handles agent routing, tool dispatch, and channel management on top of the Next.js request lifecycle. All agent code lives under the `agent/` directory. When a user message arrives, Eve loads `agent/agent.ts` for the model configuration, resolves the active skills, dispatches tool calls to the matching `agent/tools/` implementations, and streams the response back through the configured channel.
+
+## Project Layout
+
+```
+agent/
+  agent.ts              # Eve agent config entry — model and reasoning settings
+  instructions.md       # root agent instructions (identity, contract, pipeline)
+  tools/                # tool implementations (run_zap, generate_*, stitch_zap, …)
+  channels/eve.ts       # Eve channel definition and auth strategy
+  lib/                  # shared helpers (budget, providers, zap-runner, schema)
+  sandbox/              # sandbox workspace for agent file operations
+  skills/zap-*/         # recipe skill directories
+```
+
+## Agent Configuration
+
+`agent/agent.ts` is the Eve agent config entry point. It declares the model and reasoning level used for all agent turns:
+
+```typescript
+import { defineAgent } from "eve";
+
+export default defineAgent({
+  model: "anthropic/claude-sonnet-4.6",
+  reasoning: "medium",
+});
+```
+
+The `model` field accepts any provider-prefixed model string supported by Eve's model router. The `reasoning` field controls chain-of-thought depth — use `"medium"` for the standard Zap agent and `"high"` only when debugging complex multi-step recipe authoring.
+
+## Root Instructions
+
+`agent/instructions.md` defines the agent's identity, contract, and pipeline grammar. The key sections are:
+
+- **Identity** — Zap Operator, an Eve-native content agent for authoring, running, and compiling one-click generative video recipes
+- **Contract** — rules for the creator path (deterministic `run_zap`) vs. the dev/agent path (creative primitive tools, then `save_zap`)
+- **Zap Pipeline** — the canonical grammar: `InitialFrame -> InitialGen -> InitialGenReViz? -> ExtendGen x N -> Zap.mp4`
+- **Responses** — surface run IDs, provider request IDs, current cost, stage, and next user decision; never claim a video is complete until run status is `done` and a final asset URL exists
+
+## Eve Docs Read Order
+
+The full Eve documentation lives at `node_modules/eve/docs/`. For Zap work, read in this order:
+
+1. `node_modules/eve/docs/introduction`
+2. `node_modules/eve/docs/getting-started`
+3. `node_modules/eve/docs/project-layout`
+4. `node_modules/eve/docs/agent-config`
+5. `node_modules/eve/docs/skills`
+6. `node_modules/eve/docs/tools`
+7. `node_modules/eve/docs/channels`
+8. `node_modules/eve/docs/sandbox`
+9. `node_modules/eve/docs/deployment`
+
+## Useful Commands
+
+```bash
+# Print the resolved Eve agent configuration for the current project
+npm run eve:info
+
+# Compile the Eve agent for production deployment
+npm run eve:build
+```
+
+`eve:info` is the fastest way to verify that Eve has picked up your `agent.ts`, resolved all tools and skills, and is pointing at the correct model. Run it after any structural change to `agent/`.
+
+## Eve Version Pin
+
+Zap v1 pins Eve at **`0.15.1`**. Do not upgrade the `eve` package unless a blocking bug requires it — Eve introduces breaking changes in minor versions, and the Zap skill schema and tool contract are validated against this specific version.
+
+```json
+{
+  "eve": "0.15.1"
+}
+```
+
+If an upgrade is unavoidable, re-read the relevant Eve changelogs and re-run `zap validate` against all skills before deploying.
+
+## Agent Sandbox
+
+`agent/sandbox/` is the Eve sandbox workspace — a managed directory where the agent can read and write files during execution. Tools like `stitch_zap` and `extract_last_frame` operate inside this sandbox via `ctx.getSandbox()`, which gives them an isolated filesystem and a `sandbox.run()` interface for executing ffmpeg commands without touching the host.
+
+The sandbox is reset between agent sessions. Do not rely on sandbox-written files persisting across runs; use Convex or blob storage for durable asset references.
+
+## Eve Channels
+
+`agent/channels/eve.ts` defines how the Zap agent communicates with clients. The channel uses the `eveChannel` factory from `eve/channels/eve` and configures three authentication strategies:
+
+```typescript
+import { eveChannel } from "eve/channels/eve";
+import { httpBasic, localDev, vercelOidc } from "eve/channels/auth";
+
+export default eveChannel({
+  auth: [
+    httpBasic({
+      username: process.env.ZAP_BASIC_USER ?? "zap",
+      password: process.env.ZAP_BASIC_PASSWORD ?? "",
+    }),
+    vercelOidc(),
+    localDev(),
+  ],
+});
+```
+
+| Strategy | When it applies |
+|----------|----------------|
+| `httpBasic` | API clients and CI that authenticate with `ZAP_BASIC_USER` / `ZAP_BASIC_PASSWORD` |
+| `vercelOidc` | Production Vercel deployments — token is issued automatically by the Vercel OIDC service |
+| `localDev` | Local development — bypasses auth when running on `localhost` |
+
+The studio UI at `/studio` connects to the agent through this Eve channel. Streaming responses, tool-call events, and run status updates all flow over this single channel definition.
+
+<Warning>
+  Before editing any Eve agent code — including `agent.ts`, `channels/eve.ts`, or any file under `agent/tools/` — read the matching Eve guide in `node_modules/eve/docs/`. Eve enforces strict conventions around tool signatures, approval policies, and channel auth; deviating from the guide without understanding the contract will cause silent runtime failures.
+</Warning>

@@ -1,0 +1,73 @@
+---
+title: "Agent Studio: Chat-Driven Recipe Creation"
+sidebarTitle: "Studio"
+description: "The Zap studio at /studio provides an Eve-powered chat interface where agents can author, validate, and run recipes interactively without touching the CLI."
+---
+
+The Zap Studio is an Eve-powered agent workspace accessible at `/studio`. It provides a conversational interface where agents can create, validate, extend, and execute recipes without leaving the browser or touching the CLI. Under the hood, the studio renders an `AgentChat` component that wires the Eve agent to the full set of Zap tool calls — the same tools the CLI uses — so every action taken in the chat is reproducible in a terminal or CI pipeline.
+
+## Primary Views
+
+### `/studio` — Eve Agent Chat
+
+The studio chat is the primary authoring environment. When you open `/studio`, Eve loads with awareness of every installed recipe and the full Zap tool surface. You can ask Eve to:
+
+- Run an existing recipe in mock or live mode
+- Create a new recipe from a description
+- Stitch multiple outputs together
+- Extend a video with additional frames
+- Save a completed run to your gallery
+
+Eve communicates its progress through structured tool-call responses, so you always see exactly what command was dispatched and what the provider returned.
+
+### `/zap/[slug]` — Creator One-Click Runner
+
+The `/zap/[slug]` route is the creator-facing side of the studio surface. Each page renders a single recipe identified by its slug (for example, `/zap/world-cup-entrance`). Creators see a run form pre-populated with the recipe's input contract; they fill in their values, choose mock or live, and click **Run**. No CLI knowledge required.
+
+The slug maps directly to a skill directory under `agent/skills/`. Any recipe you author in the studio chat and save will immediately appear as its own `/zap/[slug]` page.
+
+## Running the Studio Locally
+
+Start the Next.js dev server with the Zap CLI or directly via npm:
+
+```bash
+npx @wzrdtech/zap@0.1.0 studio
+# or
+npm run dev
+```
+
+The studio will be available at `http://localhost:3000/studio`. Mock runs work with zero provider configuration; live runs additionally require Supabase credentials and at least one BYOK provider key stored in `/settings`.
+
+## Agent Tools
+
+The following tools are available to Eve inside the studio. Each tool corresponds to a file in `agent/tools/` and maps to a server-side action or API call.
+
+| Tool | Description |
+|---|---|
+| `run_zap` | Execute a full recipe pipeline. Accepts a slug, input record, live flag, and optional provider override. Returns run status and output URLs. |
+| `save_zap` | Persist the output of a completed run to the creator's gallery. |
+| `stitch_zap` | Run the stitch step — combine multiple video segments into a single output file. |
+| `edit_video` | Apply video edits (trim, overlay, caption) to an existing output. |
+| `generate_image` | Call the `image.gen` step directly with a prompt and provider config. |
+| `generate_video` | Call the `video.gen` step to produce a video clip from a prompt or image seed. |
+| `generate_audio` | Call the audio generation step to produce a soundtrack or voiceover. |
+| `extract_last_frame` | Extract the last frame of a video output — used to prepare a seed image for an extend or upscale pass. |
+| `upscale_frame` | Upscale a single extracted frame before feeding it back into a video generation step. |
+| `get_run_status` | Poll the current state of an in-flight run — useful for long-running provider jobs that return async job IDs. |
+
+All tool calls are visible in the chat transcript, so you can inspect the exact inputs and outputs Eve used at each step.
+
+## Run Progress: `/runs/[runId]`
+
+When a run is dispatched — whether from the studio chat, the `/zap/[slug]` runner, or the REST API — Zap records durable run state in Convex and assigns a unique `runId`. Navigate to `/runs/[runId]` to see:
+
+- **Step states** — which pipeline steps have completed, are pending, or have errored
+- **Spend so far** — cumulative provider spend in USD (zero for mock runs)
+- **Output URLs** — direct links to generated images, videos, and audio as each step completes
+- **Error details** — provider error messages surfaced for failed steps
+
+The page updates in real time via Convex subscriptions. You can share a `/runs/[runId]` URL with anyone — it is publicly readable.
+
+<Tip>
+  Mock runs in the studio are zero-spend and publicly accessible. No wallet, no provider keys, and no budget approval are required. Use mock mode freely to prototype recipes, validate input contracts, and demonstrate flows before committing to a live run.
+</Tip>

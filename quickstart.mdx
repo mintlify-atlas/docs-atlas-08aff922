@@ -1,47 +1,176 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with Zap in 5 Minutes"
+sidebarTitle: "Quickstart"
+description: "Scaffold a Zap project, author your first recipe, validate it, and run a zero-cost mock pipeline — all from the command line."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+In this guide you will scaffold a fresh Zap project, author a recipe with `zap new`, validate it against the schema, and execute the full pipeline in mock mode — producing a local run result with no provider spend. The whole sequence takes under five minutes and requires only Node.js 24 and an internet connection for the initial `npx` fetch.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Install & scaffold a project">
+    Run the `init` command with `--non-interactive` to scaffold the project layout, write `AGENTS.md`, `.env.example`, and `package.json`, and install a sample `hello-world` recipe — then install dependencies:
 
     ```bash
-    npm install your-package
+    npx @wzrdtech/zap@0.1.0 init demo --non-interactive
+    cd demo
+    npm install
+    ```
+
+    The generated `package.json` includes a full set of convenience scripts so you can use `npm run zap:*` instead of typing the full `npx` prefix each time.
+  </Step>
+
+  <Step title="Scaffold a recipe">
+    Use `zap new` to scaffold a recipe skill directory. The slug is lowercased and hyphenated automatically:
+
+    ```bash
+    npx @wzrdtech/zap@0.1.0 new my-zap
+    ```
+
+    This creates the following file tree inside your project:
+
+    ```text
+    agent/
+    └── skills/
+        └── zap-my-zap/
+            ├── SKILL.md
+            ├── Zap.md
+            └── prompts/
+                ├── initial-frame.md
+                └── initial-gen.md
+    ```
+
+    The generated `Zap.md` has pre-filled frontmatter ready to validate and run immediately:
+
+    ```yaml
+    ---
+    budget:
+      cap_usd: 5
+      estimate_usd: 0
+    defaults:
+      provider: mock
+    description: A one-click My Zap content recipe.
+    inputs:
+      PROMPT:
+        hint: Describe the scene or transformation.
+        label: Prompt
+        required: true
+        type: textarea
+    output: Zap.mp4
+    steps:
+      - id: initial_frame
+        kind: image.gen
+        model: mock-image
+        prompt: prompts/initial-frame.md
+        provider: mock
+      - duration_s: 15
+        id: initial_gen
+        inputs:
+          - initial_frame
+        kind: video.gen
+        model: mock-video
+        prompt: prompts/initial-gen.md
+        provider: mock
+      - id: stitch
+        inputs:
+          - initial_gen
+        kind: stitch
+        stitch:
+          engine: auto
+          format: mp4
+          quality: standard
+    version: 1
+    zap: my-zap
+    ---
+
+    # My Zap
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Validate the recipe">
+    Run the validator to confirm the frontmatter schema is correct, all step `id` and `kind` fields are present, input references are declared, and the budget cap is positive:
 
     ```bash
-    your-cli init
+    npx @wzrdtech/zap@0.1.0 validate
     ```
+
+    Expected output for a fresh scaffold:
+
+    ```text
+    ok agent/skills/zap-my-zap/Zap.md (my-zap)
+    ```
+
+    You can also pass a specific file path or slug to validate a single recipe: `zap validate agent/skills/zap-my-zap/Zap.md`.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Run the mock pipeline">
+    Execute the full step graph in mock mode. The `--json` flag returns machine-readable output suitable for agents and CI pipelines:
 
     ```bash
-    your-cli start
+    npx @wzrdtech/zap@0.1.0 run agent/skills/zap-my-zap/Zap.md --json
+    ```
+
+    Truncated output:
+
+    ```json
+    {
+      "runId": "run_lx0k3f_a1b2c3",
+      "zap": "my-zap",
+      "status": "done",
+      "mode": "mock",
+      "live": false,
+      "message": "Mock Zap run completed.",
+      "quoteUsd": 0,
+      "zapUrl": "mock://zap/my-zap/run_lx0k3f_a1b2c3/Zap.mp4",
+      "steps": [
+        { "stepId": "initial_frame", "kind": "image.gen", "provider": "mock", "status": "done", "quoteUsd": 0 },
+        { "stepId": "initial_gen",   "kind": "video.gen", "provider": "mock", "status": "done", "quoteUsd": 0 },
+        { "stepId": "stitch",        "kind": "stitch",    "provider": "mock", "status": "done", "quoteUsd": 0 }
+      ]
+    }
+    ```
+
+    The full result is also written to `.zap/runs/<runId>/result.json` for offline inspection.
+  </Step>
+
+  <Step title="Check run status">
+    List all local runs or inspect a specific run by ID:
+
+    ```bash
+    # List all run IDs
+    npx @wzrdtech/zap@0.1.0 status
+
+    # Inspect a specific run
+    npx @wzrdtech/zap@0.1.0 status run_lx0k3f_a1b2c3
+    ```
+
+    Output for a completed mock run:
+
+    ```text
+    run_lx0k3f_a1b2c3 done mock://zap/my-zap/run_lx0k3f_a1b2c3/Zap.mp4
     ```
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+<Note>
+  **Live provider runs require `--live` plus provider credentials.** Mock mode is always the default and always free. To run against real providers (GMI Cloud, fal.ai, etc.), pass `--live` and ensure the appropriate API keys are set in your environment. See [Providers](/concepts/providers) for key names and setup instructions.
+</Note>
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+<Tip>
+  **Use the npm scripts for daily development.** `zap init` adds these scripts to `package.json` automatically:
+
+  ```json
+  {
+    "scripts": {
+      "zap:new":      "zap new",
+      "zap:validate": "zap validate",
+      "zap:run":      "zap run",
+      "zap:status":   "zap status",
+      "zap:doctor":   "zap doctor",
+      "zap:docs":     "zap docs",
+      "zap:skills":   "zap skills check"
+    }
+  }
+  ```
+
+  With these in place you can run `npm run zap:validate`, `npm run zap:run -- agent/skills/zap-my-zap/Zap.md --json`, and so on without the `npx @wzrdtech/zap@0.1.0` prefix.
 </Tip>

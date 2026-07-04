@@ -1,0 +1,201 @@
+---
+title: "Zap Runtime: Convex, Upstash, and Provider Execution"
+sidebarTitle: "Runtime"
+description: "How Zap executes live pipelines: Convex run state, Upstash idempotency queues, provider adapters, poll draining, HyperFrames stitching, and BYOK key retrieval."
+---
+
+Zap separates **planning** (recipe validation, budget checks, step expansion) from **execution** (provider API calls, asset persistence, poll draining). The runtime glues Convex, Upstash, and provider adapters together into a durable, idempotent pipeline: each step can be retried safely, partial runs can resume, and mock runs share the same code path as live runs.
+
+---
+
+## Architecture Overview
+
+A live run follows this path from API request to final artifact:
+
+```
+POST /api/zaps/run
+  -> validate Zap.md          (parseZapMarkdown, assertWithinBudget)
+  -> create run + steps in Convex
+  -> submit provider job       (provider adapter → submit())
+  -> enqueue Upstash poll job  (idempotency key written to Redis)
+  -> drain endpoint polls provider
+  -> update Convex idempotently (step status, asset URL, actualUsd)
+```
+
+The client polls Convex (real-time subscriptions or manual refresh) to observe step progress and retrieve output assets. The server-side poll drain loop runs independently of the originating HTTP request.
+
+---
+
+## Components
+
+### Convex
+
+Convex is the source of truth for all run state. Every table is defined in `convex/schema.ts`.
+
+| Table | Purpose |
+|---|---|
+| `runs` | One record per pipeline execution — status, cost, inputs, zapSlug, zapVersion |
+| `steps` | One record per planned step — status, provider, model, priceQuoteUsd, actualUsd, progress |
+| `assets` | Output files (png, mp4, wav, json) — URL, storageKey, dimensions, duration |
+| `feedback` | RLHF votes and VLM judge scores keyed by runId + stepId |
+| `cronLogs` | Cron job execution history — duration, processedCount, errorCount, status |
+| `zaps` | Published recipe index — slug, version, estimateUsd, source, status, tags |
+
+**Run status lifecycle:**
+
+```
+queued → running → waiting (RLHF pause) → done
+                                        → failed
+```
+
+**Step status lifecycle:**
+
+```
+queued → running → done
+                 → failed
+                 → skipped
+```
+
+### Upstash Redis
+
+Upstash provides two critical functions:
+
+1. **Idempotency keys** — each provider job submission writes a key to Redis before the API call. If the submission is retried (e.g. after a timeout), the existing `requestId` is returned instead of creating a duplicate job.
+2. **Provider poll queues** — after submission, a poll job is enqueued in Upstash. The drain endpoint consumes these jobs on a schedule, calls `provider.poll(requestId)`, and updates Convex when the result is ready.
+
+**Required environment variables:**
+
+```bash
+UPSTASH_REDIS_REST_URL=https://your-instance.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your_token_here
+```
+
+### Provider Adapters
+
+Every provider implements the `ProviderAdapter` interface from `lib/provider-types.ts`:
+
+```typescript
+interface ProviderAdapter {
+  id: "gmi" | "fal" | "mock";
+  supports(capability: Capability, model: string): boolean;
+  price(req: GenRequest): number;
+  submit(req: GenRequest, idemKey: string): Promise<ProviderSubmitResult>;
+  poll(requestId: string, secrets?: Record<string, string>): Promise<ProviderPollResult>;
+}
+```
+
+The provider router selects an adapter by matching `step.provider` (or `defaults.provider`) against registered adapter IDs:
+
+| Adapter | File | Description |
+|---|---|---|
+| `gmi` | `lib/providers/gmi.ts` | GMI Cloud — primary provider for Seedance and related models |
+| `fal` | `lib/providers/fal.ts` | fal.ai — Kling, Flux, Veo, and other hosted models |
+| `mock` | `lib/providers/mock.ts` | Deterministic zero-cost outputs for development and demos |
+
+**Poll result shape:**
+
+```typescript
+type ProviderPollResult = {
+  status: "queued" | "running" | "done" | "failed";
+  outputUrl?: string;  // set when status === "done"
+  progress?: number;   // 0–100
+  actualUsd?: number;  // final billed amount
+  error?: string;      // set when status === "failed"
+};
+```
+
+### Poll Drain Endpoint
+
+`POST /api/providers/poll/drain` is invoked by the Upstash queue scheduler. It:
+
+1. Dequeues a batch of pending poll jobs from Upstash
+2. For each job, calls `provider.poll(requestId, secrets)`
+3. On `done`: writes the asset to `@vercel/blob`, records the asset in Convex, marks the step `done`
+4. On `failed`: records the error on the Convex step, marks the step `failed`
+5. On `queued` / `running`: re-enqueues the job with an exponential backoff delay
+
+### Blob Store
+
+Generated assets are persisted to Vercel Blob via `@vercel/blob`. The asset URL is written to the `assets` table in Convex.
+
+**Required environment variable:**
+
+```bash
+BLOB_READ_WRITE_TOKEN=vercel_blob_rw_your_token
+```
+
+---
+
+## BYOK Key Retrieval
+
+Live runs can use creator-supplied provider keys (Bring Your Own Key). The key retrieval flow is:
+
+1. The client sends a wallet-authenticated Supabase bearer token with the run request
+2. The server verifies the JWT and the `ZAP_SECRET_REVEAL_TOKEN` environment variable
+3. Provider keys are fetched from Supabase and injected into the `GenRequest.secrets` field
+4. The provider adapter reads `secrets` during `submit()` and `poll()` calls
+5. **Plaintext keys are never returned to the browser** — they exist only in the server-side request context
+
+**Required environment variable (server-side only):**
+
+```bash
+ZAP_SECRET_REVEAL_TOKEN=your_reveal_token
+```
+
+---
+
+## HyperFrames Stitching
+
+When a recipe specifies `stitch.engine: hyperframes`, the runtime follows this flow:
+
+1. **Detect** `stitch.engine: hyperframes` in the planned step
+2. **Generate** a temporary HyperFrames project directory with a Zap visual identity (`DESIGN.md` is written automatically if not present in the recipe root)
+3. **Validate** the project by running the HyperFrames CLI checks in sequence:
+   ```bash
+   npx hyperframes lint
+   npx hyperframes validate
+   npx hyperframes inspect
+   ```
+4. **Render** the composition to the output format and quality:
+   ```bash
+   npx hyperframes render --format mp4 --quality standard
+   ```
+5. **Persist** the rendered file to `@vercel/blob` and record the asset in Convex
+6. **On failure**: record the error message on the Convex step record and fall back to the first resolved stitch asset — the run is marked `done` (not `failed`) with an explanatory step error
+
+<Note>
+  HyperFrames is an optional runtime dependency. If `npx hyperframes` is not available in the execution environment, the `auto` engine falls back to local FFmpeg-based stitching automatically. Only `engine: hyperframes` (explicit) triggers the HyperFrames path; `engine: auto` prefers HyperFrames when available but never fails if it is absent.
+</Note>
+
+---
+
+## Live vs Mock Runs
+
+The `mock` provider adapter returns deterministic, zero-cost outputs on every call. It is used by default in new recipes (`defaults.provider: mock`) and for all demo runs on the web.
+
+| Behavior | Mock | Live |
+|---|---|---|
+| Provider API calls | None — outputs are deterministic fixtures | Real calls to GMI / fal |
+| Cost | $0 | Billed per `quoteStep()` rates |
+| Output | Fixture files | Real generated assets |
+| Local CLI storage | `.zap/runs/<runId>/` | `.zap/runs/<runId>/` |
+| Web storage | Convex + Blob (fixture URLs) | Convex + Blob (real URLs) |
+| Auth required | No — public | Yes — wallet-authenticated Supabase token |
+| `--live` flag required | No | Yes (CLI) / `live: true` (API) |
+
+<Note>
+  Mock creator demos are **public and zero-spend** — no wallet or API keys are required. Live runs that call real provider APIs require a wallet-authenticated Supabase bearer token and a funded provider account.
+</Note>
+
+---
+
+## Environment Variable Reference
+
+| Variable | Component | Required |
+|---|---|---|
+| `UPSTASH_REDIS_REST_URL` | Upstash | Live runs |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash | Live runs |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob | Live runs |
+| `ZAP_SECRET_REVEAL_TOKEN` | BYOK key retrieval | BYOK runs |
+| `CONVEX_DEPLOYMENT` | Convex client | All web runs |
+| `NEXT_PUBLIC_CONVEX_URL` | Convex client (browser) | All web runs |

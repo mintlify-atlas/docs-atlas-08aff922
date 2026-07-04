@@ -1,7 +1,7 @@
 ---
-title: "Step Kind Reference: All 11 Pipeline Step Types"
+title: "Zap Step Kinds: All 11 Pipeline Step Types Explained"
 sidebarTitle: "Step Kinds"
-description: "Detailed reference for every Zap step kind — image.gen, video.gen, video.extend, stitch, and more — with fields, provider notes, and YAML examples."
+description: "Reference for all 11 Zap step kinds with YAML examples, key fields, provider notes, and the complete model cost rate table from planner.ts."
 ---
 
 Zap supports 11 step kinds. Each maps to a generation category and is routed to the appropriate provider adapter at runtime — the adapter's `supports(capability, model)` method is checked before any job is submitted. Steps are connected via `inputs` references that name upstream step IDs, forming a directed dependency graph that the runtime resolves in order.
@@ -83,14 +83,16 @@ Animate image or prompt inputs into a video clip. The upstream `image.gen` step 
 - `seedance-2-0-260128` — billed at `$0.07/s`
 - `fal-ai/kling-video/v2.1/pro/image-to-video` — billed at `$0.28/s`
 - `fal-ai/veo3.1` — billed at `$0.45/s`
+- `happyhorse-1.1-i2v` — billed at `$0.28/s`
+- `gemini-omni-flash-preview` — billed at `$0.10/s`
 
 ---
 
 ## `video.extend`
 
-Continue a clip from its last frame. The `inputs` field references the step to extend from. Use `repeat` to define a variable-length extension chain — the `extendCount` parameter at run time controls how many copies are instantiated by `expandRepeatSteps()`.
+Continue a clip from its last frame. The `inputs` field references the step to extend from. Use `repeat` to define a variable-length extension chain — the `extendCount` parameter at run time controls how many copies are instantiated by `expandRepeatSteps()`. Use `extend.mode` to control whether each iteration chains from the previous clip's last frame (`chain`) or always anchors to the original first frame (`anchored`).
 
-**Key fields:** `inputs`, `duration_s`, `model`, `prompt`, `repeat`
+**Key fields:** `inputs`, `duration_s`, `model`, `prompt`, `repeat`, `extend`
 
 ```yaml
 - id: extend
@@ -103,6 +105,8 @@ Continue a clip from its last frame. The `inputs` field references the step to e
     min: 0
     max: 4
     default: 2
+  extend:
+    mode: chain
 ```
 
 The planner expands this into up to 4 numbered steps: `extend_1`, `extend_2`, `extend_3`, `extend_4`. With `extendCount: 2`, only `extend_1` and `extend_2` are submitted.
@@ -252,6 +256,24 @@ Use `engine: hyperframes` when the recipe needs HTML-based composition:
 
   If the HyperFrames CLI is not installed or a generated composition check fails (`npx hyperframes lint` / `validate` / `inspect`), the runtime records the error on the step and falls back to the first resolved stitch asset. The run does not fail.
 </Note>
+
+---
+
+## Model Rate Table
+
+The following rates are used by `quoteStep()` (sourced from `planner.ts`). Models not in this table cost `$0` (either local steps, mock models, or models without a declared rate).
+
+| Model | Billing | Rate |
+|---|---|---|
+| `fal-ai/flux/dev` | Per request | $0.03 |
+| `fal-ai/kling-video/v2.1/pro/image-to-video` | Per second | $0.28/s |
+| `fal-ai/veo3.1` | Per second | $0.45/s |
+| `gemini-omni-flash-preview` | Per second | $0.10/s |
+| `happyhorse-1.1-i2v` | Per second | $0.28/s |
+| `seedance-2-0-260128` | Per second | $0.07/s |
+| `seedance-2-0-260128-upscale` | Per second | $0.056/s |
+
+For time-billed models, the formula is `rate × duration_s`. If `duration_s` is not set on the step, a default of `1` second is used for the estimate.
 
 ---
 

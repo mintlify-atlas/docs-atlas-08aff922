@@ -1,7 +1,7 @@
 ---
 title: "Zap Runtime: Convex, Upstash, and Provider Execution"
 sidebarTitle: "Runtime"
-description: "How Zap executes live pipelines: Convex run state, Upstash idempotency queues, provider adapters, poll draining, HyperFrames stitching, and BYOK key retrieval."
+description: "How Zap executes live pipelines: Convex run state, Upstash poll queues, provider adapters, poll draining, HyperFrames stitching, and BYOK key retrieval."
 ---
 
 Zap separates **planning** (recipe validation, budget checks, step expansion) from **execution** (provider API calls, asset persistence, poll draining). The runtime glues Convex, Upstash, and provider adapters together into a durable, idempotent pipeline: each step can be retried safely, partial runs can resume, and mock runs share the same code path as live runs.
@@ -84,6 +84,24 @@ interface ProviderAdapter {
 }
 ```
 
+The `GenRequest` type carries all information needed for a provider API call:
+
+```typescript
+type GenRequest = {
+  attemptSalt?: string;
+  capability: Capability;       // ZapStep["kind"]
+  durationS?: number;
+  inputs: Record<string, unknown>;
+  model: string;
+  prompt: string;
+  provider?: string;
+  runId: string;
+  secrets?: Record<string, string>;
+  stepId: string;
+  webhookUrl?: string;
+};
+```
+
 The provider router selects an adapter by matching `step.provider` (or `defaults.provider`) against registered adapter IDs:
 
 | Adapter | File | Description |
@@ -101,6 +119,15 @@ type ProviderPollResult = {
   progress?: number;   // 0–100
   actualUsd?: number;  // final billed amount
   error?: string;      // set when status === "failed"
+};
+```
+
+**Submit result shape:**
+
+```typescript
+type ProviderSubmitResult = {
+  provider: string;
+  requestId: string;
 };
 ```
 

@@ -1,7 +1,7 @@
 ---
-title: "Zap CLI Global Flags and Output Formats"
+title: "Zap CLI Global Flags: Shared Options Across All Commands"
 sidebarTitle: "CLI Flags"
-description: "Reference for Zap CLI flags shared across commands: --json for machine-readable output, --live for provider spend, --input for recipe inputs, and --force."
+description: "Reference for all Zap CLI flags: --json for machine-readable output, --live for provider spend, --input for recipe values, and --force."
 ---
 
 The Zap CLI uses a consistent flag syntax across all commands. Most flags that control output format or execution mode work on any command that produces output. Flags are parsed uniformly: they accept `--key value`, `--key=value`, or bare `--key` for boolean flags. Flags can appear before or after positional arguments.
@@ -87,8 +87,8 @@ The Zap CLI uses a consistent flag syntax across all commands. Most flags that c
   ```
 </ParamField>
 
-<ParamField query="--version / -v" type="boolean">
-  Print the CLI version and exit. Accepts both `--version` and `-v`, or use `zap --version` as a command.
+<ParamField query="--version" type="boolean">
+  Print the CLI version and exit. Can also be invoked as `zap --version` before any command.
 
   ```bash
   zap --version
@@ -96,8 +96,8 @@ The Zap CLI uses a consistent flag syntax across all commands. Most flags that c
   ```
 </ParamField>
 
-<ParamField query="--help / -h" type="boolean">
-  Print the help text listing all commands and common flags, then exit. Also triggered by `zap help` or `zap` with no arguments.
+<ParamField query="--help" type="boolean">
+  Print the help text listing all commands and common flags, then exit. Also triggered by `zap help` or running `zap` with no arguments.
 
   ```bash
   zap --help
@@ -144,10 +144,9 @@ Several CLI behaviors can be controlled through environment variables, useful fo
 
 | Variable | Effect |
 |----------|--------|
-| `ZAP_PROVIDER=mock` | Override provider selection to `mock` at runtime |
 | `ZAP_LINT_ALLOW_LIVE_DEFAULT=1` | Silence the `zap lint` warning about non-mock `defaults.provider` |
 
-These can be set in your `.env` or `.env.local` file (automatically loaded by the CLI on startup) or exported in your shell:
+This can be set in your `.env` or `.env.local` file (automatically loaded by the CLI on startup) or exported in your shell:
 
 ```bash
 ZAP_LINT_ALLOW_LIVE_DEFAULT=1 zap lint

@@ -1,7 +1,7 @@
 ---
-title: "Troubleshooting Common Zap Issues"
+title: "Troubleshooting Zap: Node, Validation, and Run Errors"
 sidebarTitle: "Troubleshooting"
-description: "Solutions for the most common Zap problems: Node version errors, recipe validation failures, live run rejections, Supabase secret issues, and HyperFrames fallbacks."
+description: "Fixes for the most common Zap errors: Node version issues, recipe validation, live run rejections, Supabase auth, and HyperFrames fallback behavior."
 ---
 
 Most Zap issues fall into a small set of categories. Before diving into specific symptoms, run `zap doctor` — it checks your local environment against every prerequisite and is always the right first step.
@@ -18,8 +18,8 @@ npx @wzrdtech/zap@0.1.0 doctor --json
 | `package` | `package.json` present in the current directory |
 | `zap skills` | `agent/skills` directory present |
 | `convex` | `NEXT_PUBLIC_CONVEX_URL` configured |
-| `upstash` | Upstash REST env configured (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) |
-| `supabase` | Supabase public env configured (`NEXT_PUBLIC_SUPABASE_URL` + key) |
+| `upstash` | `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` both set |
+| `supabase` | `NEXT_PUBLIC_SUPABASE_URL` and either `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY` set |
 | `hyperframes` | HyperFrames CLI available *(optional)* |
 
 ---

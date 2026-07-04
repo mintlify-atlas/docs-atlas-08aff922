@@ -1,7 +1,7 @@
 ---
-title: "Zap Recipe Schema: Full Field Reference"
+title: "Zap Recipe Schema Reference: Fields, Types, Defaults"
 sidebarTitle: "Schema"
-description: "Complete Zod-validated schema reference for Zap.md frontmatter — every field, type, default value, and constraint extracted from the @wzrdtech/core package."
+description: "Complete field reference for Zap.md frontmatter: every ZapSpec, ZapStep, and ZapStitch field, type, default, and constraint from @wzrdtech/core."
 ---
 
 The `@wzrdtech/core` package defines the canonical Zod schema for Zap recipes. Every field listed here is validated by `parseZapMarkdown()` before any run begins — if your `Zap.md` frontmatter fails validation, no provider jobs are submitted and the error is surfaced immediately with the offending field path.
@@ -182,6 +182,30 @@ Every step in the `steps` array is validated against `zapStepSchema`.
   Array of image URLs or local paths to use as reference images for this step. Forwarded to providers that support reference-based generation (e.g. character consistency).
 </ParamField>
 
+<ParamField path="audio" type="Record<string, unknown>">
+  Provider-specific audio configuration record for steps that accept audio inputs or parameters. The shape is adapter-defined; unrecognised keys are passed through to the provider.
+</ParamField>
+
+<ParamField path="first_frame" type="Record<string, unknown>">
+  Provider-specific first-frame configuration record. Used by image-to-video providers to control how the anchor frame is interpreted (e.g. crop mode, anchor weight).
+</ParamField>
+
+<ParamField path="judge" type="Record<string, unknown>">
+  Provider-specific VLM judge configuration record. When set, the runtime requests an automated quality score from a vision-language model after the step completes and records the result in the `feedback` table.
+</ParamField>
+
+<ParamField path="keyframes" type="Record<string, unknown>">
+  Provider-specific keyframe configuration record for `kind: keyframes` steps. Controls frame extraction interval, scoring criteria, or other adapter-defined parameters.
+</ParamField>
+
+<ParamField path="extend" type="object">
+  Extension mode configuration for `video.extend` steps.
+
+  | Sub-field | Type | Default | Description |
+  |---|---|---|---|
+  | `mode` | `"chain"` \| `"anchored"` | `"chain"` | `chain` feeds each extension's last frame into the next; `anchored` always re-anchors to the original first frame. |
+</ParamField>
+
 ---
 
 ## ZapStitch Fields
@@ -224,7 +248,9 @@ All functions are exported from `@wzrdtech/core`.
 // undeclared input variables, or duplicate step IDs.
 parseZapMarkdown(markdown: string): ZapSpec
 
-// Strip the YAML frontmatter block from a Zap.md string.
+// Extract and return the raw YAML content from inside
+// the --- fences of a Zap.md string.
+// Throws if no frontmatter block is found.
 extractFrontmatter(markdown: string): string
 
 // Assert that all {VARIABLE} references in prompt paths

@@ -1,7 +1,7 @@
 ---
-title: "Budget Caps and Cost Estimation in Zap"
+title: "Budget Caps and Live Cost Estimation for Zap Recipes"
 sidebarTitle: "Budget"
-description: "Every Zap recipe declares an estimated cost and a hard cap_usd. Understand how budget enforcement works at the CLI and web runtime, and how model rates are calculated."
+description: "Every Zap recipe declares an estimate_usd and a hard cap_usd. Learn how the CLI and web runtime enforce spend limits before any provider call."
 ---
 
 Budget is a first-class concept in Zap — every recipe must declare both an estimated cost and a hard spending ceiling before any provider call is made. This makes cost visible and controllable at authoring time, not after the bill arrives. The budget block is validated at parse time, quoted again at plan time, and enforced a final time on the server before provider submission, giving creators three independent opportunities to catch runaway spend before it happens.

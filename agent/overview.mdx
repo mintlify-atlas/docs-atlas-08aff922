@@ -1,7 +1,7 @@
 ---
-title: "Zap Agent Framework: Eve-Powered Recipe Execution"
+title: "Zap Agent Framework: Eve-Powered Generative Recipes"
 sidebarTitle: "Overview"
-description: "Zap is an Eve app convention. Recipes are portable skill directories that coding agents read, edit, validate, and run using the same CLI commands as humans."
+description: "Zap is an Eve app convention. Recipes are portable skill directories that coding agents read, edit, validate, and run like any CLI command."
 ---
 
 Zap's agent framework is built on [Eve](agent/eve) — every recipe is a portable skill directory that both human creators and AI agents treat as a self-contained executable unit. Agents read the same `SKILL.md` and `Zap.md` files a human would open, collect inputs declared in frontmatter, and run the pipeline through the same CLI commands available in a terminal. There is no separate "agent mode"; the skill directory is the interface for everyone.
@@ -63,11 +63,11 @@ The following tools are available to the Zap agent under `agent/tools/`. Each is
 | Tool | Description |
 |------|-------------|
 | `run_zap` | Execute a Zap recipe deterministically from its frontmatter and return run metadata |
-| `save_zap` | Save an approved `Zap.md` recipe as a packaged Eve skill (requires user approval) |
+| `save_zap` | Save an approved `Zap.md` recipe as a packaged Eve skill |
 | `stitch_zap` | Stitch generated video segments into `Zap.mp4` inside the Eve sandbox using ffmpeg |
-| `edit_video` | Submit a video edit or ReViz request through the Zap provider router (always requires user approval) |
+| `edit_video` | Submit a video edit or ReViz request through the Zap provider router |
 | `generate_image` | Submit an image generation or image edit request through the Zap provider router |
-| `generate_video` | Submit a video generation or extension request through the Zap provider router (requires approval for durations over 120 s) |
+| `generate_video` | Submit a video generation or extension request through the Zap provider router |
 | `generate_audio` | Submit a voice, music, or SFX request through the Zap provider router |
 | `extract_last_frame` | Extract the last frame from a video inside the Eve sandbox using ffmpeg |
 | `upscale_frame` | Upscale a frame for ExtendGen conditioning |

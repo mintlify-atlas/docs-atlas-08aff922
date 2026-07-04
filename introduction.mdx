@@ -1,5 +1,5 @@
 ---
-title: "Zap: Agent-First Generative Video Recipes"
+title: "Zap: Agent-First Framework for Generative Video Recipes"
 sidebarTitle: "Introduction"
 description: "Zap is a lightweight content-agent framework for defining, validating, and running AI-powered generative video pipelines as portable recipe files."
 ---
@@ -35,11 +35,12 @@ my-app/
 │           └── prompts/
 │               ├── initial-frame.md
 │               └── initial-gen.md
+├── docs/                        # Project documentation
 ├── .zap/
 │   └── runs/                    # Local run results (gitignored)
 ├── AGENTS.md                    # Agent instructions for the project
 ├── .env.example                 # Environment variable template
-└── package.json                 # npm scripts: zap:validate, zap:run, etc.
+└── package.json                 # npm scripts: zap:docs, zap:new, zap:run, and more
 ```
 
 `zap init <dir>` scaffolds this layout automatically, including a sample `hello-world` recipe, npm convenience scripts, and an `AGENTS.md` with project-level agent instructions.

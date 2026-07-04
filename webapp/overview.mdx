@@ -1,5 +1,5 @@
 ---
-title: "Zap Web App: Creator Studio and API Surface"
+title: "Zap Web App: Routes, Auth Posture, and REST API Reference"
 sidebarTitle: "Overview"
 description: "The Zap web app at zap.wzrd.tech hosts the creator runner, agent studio, gallery, docs, and REST API. Learn the route map and auth posture."
 ---
@@ -47,6 +47,9 @@ Certain provider proxy surfaces and Eve-adjacent endpoints may still be protecte
   </Card>
   <Card title="GET /api/skills" icon="list" href="/webapp/overview#get-apiskills">
     Return the full skill manifest — recipe names, hashes, and download URLs — used by agents to bootstrap a project.
+  </Card>
+  <Card title="GET /api/zaps" icon="bolt" href="/webapp/overview#get-apizaps">
+    Return the list of all installed recipe specs — titles, slugs, input contracts, and step definitions — for the current deployment.
   </Card>
   <Card title="PUT /api/secrets" icon="key" href="/webapp/auth-secrets">
     Upsert an encrypted BYOK provider key for the authenticated creator. Keys are stored in Supabase and never returned in plaintext to the browser.
@@ -98,22 +101,60 @@ GET /api/skills
 
 ```json
 {
+  "generatedAt": "2025-01-15T12:00:00Z",
+  "version": 1,
   "skills": [
     {
       "skill": "zap",
       "hash": "abc123",
-      "url": "https://zap.wzrd.tech/api/skills/zap"
+      "path": "zap",
+      "fileCount": 3,
+      "downloadUrl": "https://zap.wzrd.tech/api/skills/zap",
+      "jsonUrl": "https://zap.wzrd.tech/api/skills/zap?format=json"
     },
     {
       "skill": "zap-authoring",
       "hash": "def456",
-      "url": "https://zap.wzrd.tech/api/skills/zap-authoring"
+      "path": "zap-authoring",
+      "fileCount": 2,
+      "downloadUrl": "https://zap.wzrd.tech/api/skills/zap-authoring",
+      "jsonUrl": "https://zap.wzrd.tech/api/skills/zap-authoring?format=json"
     }
   ]
 }
 ```
 
 Individual skill content is fetched at `GET /api/skills/[skill]`. Append `?format=json` to receive a JSON envelope instead of raw Markdown.
+
+### GET /api/zaps
+
+Returns the list of all installed recipe specs from `agent/skills/`. Each entry is a `PublicZapSpec` — the full YAML-derived recipe definition plus a human-readable `title` field derived from the recipe slug.
+
+```http
+GET /api/zaps
+```
+
+```json
+{
+  "zaps": [
+    {
+      "zap": "world-cup-entrance",
+      "title": "World Cup Entrance",
+      "description": "Generate a cinematic team entrance video.",
+      "version": 1,
+      "defaults": { "provider": "gmi" },
+      "budget": { "cap_usd": 2.0, "estimate_usd": 0.8 },
+      "inputs": {
+        "teamName": { "type": "string", "label": "Team Name", "required": true }
+      },
+      "output": "Zap.mp4",
+      "steps": []
+    }
+  ]
+}
+```
+
+This endpoint is unauthenticated and is used by the `/gallery` page and the `/zap/[slug]` runner to enumerate available recipes.
 
 ## Smoke Test After Deploy
 

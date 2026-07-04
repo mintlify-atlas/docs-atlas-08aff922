@@ -1,7 +1,7 @@
 ---
-title: "Zap CLI Command Reference (@wzrdtech/zap)"
+title: "Zap CLI Commands: Complete @wzrdtech/zap Reference Guide"
 sidebarTitle: "CLI Commands"
-description: "Complete reference for every zap command: init, new, validate, lint, run, status, add, docs, skills, doctor, studio, dev, and more."
+description: "Complete reference for all 16 zap commands: init, new, validate, lint, run, status, dev, studio, add, docs, skills, doctor, info, upgrade, and more."
 ---
 
 The `@wzrdtech/zap` package exposes a `zap` binary that provides a full suite of commands for creating, validating, linting, and running Zap recipes. **Node 24.x is required.** Install globally or invoke directly with `npx @wzrdtech/zap@0.1.0 <command>`.
@@ -319,7 +319,7 @@ zap run agent/skills/zap-my-zap/Zap.md --input PROMPT="sunset over mountains" --
 
 ```bash
 zap run agent/skills/zap-my-zap/Zap.md --live --input PROMPT="sunset over mountains"
-# Use the web runtime to submit provider jobs.  run_m3x9k2_a1b2c3
+# Live provider run planned. Use the web runtime to submit provider jobs. run_m3x9k2_a1b2c3
 ```
 
 <Note>
@@ -561,10 +561,10 @@ zap doctor
 # ok node: Node 24.1.0
 # ok package: package.json present
 # ok zap skills: agent/skills present
-# warn convex: NEXT_PUBLIC_CONVEX_URL configured
-# warn upstash: Upstash REST env configured
+# ok convex: NEXT_PUBLIC_CONVEX_URL configured
+# ok upstash: Upstash REST env configured
 # warn supabase: Supabase public env configured
-# ok hyperframes: optional HyperFrames CLI available
+# warn hyperframes: optional HyperFrames CLI available
 ```
 
 ---

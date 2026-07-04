@@ -94,6 +94,32 @@ Zap supports 11 step kinds, covering the full media production stack:
   Enables reinforcement learning from human feedback scoring for candidate selection. Set to `true`, `false`, or `"optional"`.
 </ParamField>
 
+<ParamField path="reference_images" type="array">
+  List of input image paths or upstream step IDs to pass to the provider as reference images. Used by `image.edit` and `video.gen` steps that support image-to-video conditioning.
+</ParamField>
+
+<ParamField path="first_frame" type="object">
+  Provider-specific configuration for the first-frame anchor. Passed as a free-form object to the adapter and interpreted per-provider. Used when the provider requires explicit first-frame parameters beyond the `inputs` reference.
+</ParamField>
+
+<ParamField path="extend" type="object">
+  Extension mode configuration for `video.extend` steps. Contains one sub-field:
+
+  - **`mode`** *(string, default: `"chain"`)* — how the extension attaches to the source clip. `"chain"` continues from the last frame of the previous clip; `"anchored"` holds the first frame of the original clip as a fixed anchor throughout the extension.
+</ParamField>
+
+<ParamField path="audio" type="object">
+  Provider-specific audio configuration passed as a free-form object to the adapter. Used on `audio.tts`, `audio.music`, and `audio.sfx` steps for model parameters not covered by top-level fields (e.g. voice ID, tempo, style tags).
+</ParamField>
+
+<ParamField path="keyframes" type="object">
+  Provider-specific keyframe configuration passed as a free-form object to the adapter. Used on `keyframes`-kind steps to control extraction, scoring, or preparation parameters.
+</ParamField>
+
+<ParamField path="judge" type="object">
+  Provider-specific judge configuration for automated candidate scoring. Passed as a free-form object to the adapter when `candidates` is greater than 1 and automated selection is preferred over RLHF.
+</ParamField>
+
 <ParamField path="shared" type="boolean">
   When `true`, the output of this step is shareable across recipe instances (e.g. a common reference frame reused by multiple runs).
 </ParamField>

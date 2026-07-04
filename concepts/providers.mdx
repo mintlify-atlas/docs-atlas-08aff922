@@ -1,14 +1,14 @@
 ---
-title: "AI Provider Routing and BYOK Keys"
+title: "AI Provider Routing and BYOK Keys for Zap Pipelines"
 sidebarTitle: "Providers"
-description: "Zap routes pipeline steps to mock, GMI Cloud, or fal providers. Learn provider priority, how to supply keys, and the supported bring-your-own-key secret types."
+description: "Zap routes each pipeline step to the mock, GMI, fal, or BYOK adapter. Learn provider priority, required keys, and the seven supported secret types."
 ---
 
 Zap separates recipe planning from provider execution. When a run is submitted, the provider router inspects each step's `provider` field (or the recipe's `defaults.provider` fallback) and selects the matching adapter. This decoupling means the same recipe can be executed against the mock adapter for zero-cost development, switched to `gmi` for live production runs, and later migrated to `fal` without changing a single step definition.
 
 ## Provider Priority for v1
 
-Zap v1 recognises four provider tiers:
+Zap v1 recognises seven provider adapters, grouped into three tiers:
 
 ### `mock`
 Deterministic, zero-cost outputs designed for documentation, automated tests, and unauthenticated demos. The mock adapter returns placeholder media assets with predictable filenames and durations. No API key is required. Use mock mode for all recipe authoring and CI validation.

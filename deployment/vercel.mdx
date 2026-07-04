@@ -1,5 +1,5 @@
 ---
-title: "Deploy Zap to Vercel: Production Setup Guide"
+title: "Deploy Zap to Vercel: Complete Production Setup Guide"
 sidebarTitle: "Vercel"
 description: "Deploy the Zap Next.js app to Vercel with Node 24.x, configure environment variables, set up the poll drain endpoint, and run smoke tests."
 ---
@@ -99,6 +99,7 @@ Set all of the following in **Vercel → Project Settings → Environment Variab
 | `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL, e.g. `https://<ref>.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable (anon) key for client-side auth |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Legacy alias for the publishable key; use one or the other |
+| `NEXT_PUBLIC_THIRDWEB_CLIENT_ID` | Thirdweb client ID used for wallet-based login on the `/settings` page |
 | `ZAP_SECRET_REVEAL_TOKEN` | Long random value shared between Vercel and the `zap-user-secrets` edge function; authorises server-side plaintext key reveal |
 | `ZAP_WALLET_PROOF_FUNCTION` | Name of the Supabase edge function that handles wallet proof (default: `zap-wallet-proof`) |
 
@@ -131,6 +132,7 @@ These are the Zap server's own provider credentials, used when `ZAP_PROVIDER` is
 | `GMI_API_KEY` | GMI API key for the Zap server account |
 | `GMI_ORG_ID` | GMI organisation ID for the Zap server account |
 | `FAL_KEY` | Fal.ai API key for the Zap server account |
+| `AI_GATEWAY_API_KEY` | API key for the AI gateway, when routing provider calls through a centralised gateway |
 | `ZAP_PROVIDER` | Active provider mode: `mock`, `gmi`, or `fal` |
 
 <Warning>
@@ -143,6 +145,8 @@ These are the Zap server's own provider credentials, used when `ZAP_PROVIDER` is
 |---|---|
 | `ZAP_POLL_DRAIN_URL` | Full URL of the deployed poll drain endpoint, e.g. `https://zap.wzrd.tech/api/providers/poll/drain` |
 | `ZAP_POLL_DRAIN_SECRET` | Shared secret used to authenticate Upstash → Vercel drain requests; set this in both Vercel and Convex |
+| `ZAP_SYNC_POLL_INTERVAL_MS` | Polling interval in milliseconds between provider status checks (default: `5000`) |
+| `ZAP_SYNC_POLL_TIMEOUT_MS` | Maximum time in milliseconds to wait for a run to complete before the poller gives up (default: `1200000`) |
 
 ### Legacy Basic Auth
 
